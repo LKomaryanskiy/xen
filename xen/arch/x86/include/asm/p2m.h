@@ -1114,6 +1114,14 @@ static inline int p2m_entry_modify(struct p2m_domain *p2m, p2m_type_t nt,
 void p2m_log_dirty_range(struct domain *d, unsigned long begin_pfn,
                          unsigned long nr, uint8_t *dirty_bitmap);
 
+/* x86 doesn't use the p2mt parameter, just strip it away */
+#define map_mmio_regions(d, start_gfn, nr, mfn, p2mt) \
+            map_mmio_region(d, start_gfn, nr, mfn)
+int map_mmio_region(struct domain *d,
+                    gfn_t start_gfn,
+                    unsigned long nr,
+                    mfn_t mfn);
+
 #endif /* _XEN_ASM_X86_P2M_H */
 
 /*
