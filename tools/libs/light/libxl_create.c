@@ -1271,8 +1271,9 @@ int libxl__domain_config_setdefault(libxl__gc *gc,
     }
 
     for (i = 0; i < d_config->num_virtios; i++) {
-        ret = libxl__virtio_devtype.set_default(gc, domid,
-                                                &d_config->virtios[i], false);
+        libxl_device_virtio *virtio = &d_config->virtios[i];
+
+        ret = libxl__virtio_devtype.set_default(gc, domid, virtio, false);
         if (ret) {
             LOGD(ERROR, domid, "Unable to set virtio defaults for device %d", i);
             goto error_out;
@@ -1673,6 +1674,7 @@ static void domcreate_launch_dm(libxl__egc *egc, libxl__multidev *multidev,
     libxl__domain_create_state *dcs = CONTAINER_OF(multidev, *dcs, multidev);
     STATE_AO_GC(dcs->ao);
     int i;
+    libxl_domid dm_domid_saved = INVALID_DOMID;
 
     /* convenience aliases */
     const uint32_t domid = dcs->guest_domid;
@@ -1770,9 +1772,47 @@ static void domcreate_launch_dm(libxl__egc *egc, libxl__multidev *multidev,
         libxl__device_add(gc, domid, &libxl__pvcallsif_devtype,
                           &d_config->pvcallsifs[i]);
 
-    for (i = 0; i < d_config->num_virtios; i++)
-        libxl__device_add(gc, domid, &libxl__virtio_devtype,
-                          &d_config->virtios[i]);
+    /*
+     * This should be done before spawning device model, but after
+     * the creation of "device-model" directory in Xenstore.
+     */
+    for (i = 0; i < d_config->b_info.num_virtio_pci_hosts; i++) {
+        libxl_virtio_pci_host *host = &d_config->b_info.virtio_pci_hosts[i];
+
+        ret = libxl__save_dm_virtio_pci_host(gc, domid, host);
+        if (ret) {
+            LOGD(ERROR, domid, "Unable to save virtio_pci_host for device model");
+            goto error_out;
+        }
+    }
+
+    for (i = 0; i < d_config->num_virtios; i++) {
+        libxl_device_virtio *virtio = &d_config->virtios[i];
+
+        if (virtio->backend_type == LIBXL_VIRTIO_BACKEND_QEMU &&
+            virtio->backend_domid != LIBXL_TOOLSTACK_DOMID &&
+            dm_domid_saved == INVALID_DOMID) {
+
+            ret = libxl__save_qdisk_backend_dm_args(gc, domid,
+                                                    virtio->backend_domid,
+                                                    &d_config->b_info);
+            if (ret) {
+                LOGD(ERROR, domid, "Unable to save dm_args for Qdisk backend");
+                goto error_out;
+            }
+            dm_domid_saved = virtio->backend_domid;
+        }
+
+        libxl__device_add(gc, domid, &libxl__virtio_devtype, virtio);
+    }
+
+    if (dm_domid_saved != INVALID_DOMID) {
+        ret = libxl__wait_for_qdisk_backend_ready(gc, domid, dm_domid_saved);
+        if (ret < 0) {
+            LOGD(ERROR, domid, "Qdisk backend didn't respond in time");
+            goto error_out;
+        }
+    }
 
     if (d_config->num_vkbs) {
         for (i = 0; i < d_config->num_vkbs; i++) {

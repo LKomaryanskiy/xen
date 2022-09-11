@@ -32,7 +32,18 @@ static int libxl__device_virtio_setdefault(libxl__gc *gc, uint32_t domid,
     libxl_defbool_setdefault(&virtio->grant_usage,
                              virtio->backend_domid != LIBXL_TOOLSTACK_DOMID);
 
+    if (virtio->backend_type == LIBXL_VIRTIO_BACKEND_UNKNOWN)
+        virtio->backend_type = LIBXL_VIRTIO_BACKEND_QEMU;
+
     return 0;
+}
+
+static int libxl__device_virtio_dm_needed(void *e, unsigned domid)
+{
+    libxl_device_virtio *elem = e;
+
+    return elem->backend_type == LIBXL_VIRTIO_BACKEND_QEMU &&
+           elem->backend_domid == domid;
 }
 
 static int libxl__device_from_virtio(libxl__gc *gc, uint32_t domid,
@@ -44,7 +55,8 @@ static int libxl__device_from_virtio(libxl__gc *gc, uint32_t domid,
     device->devid           = virtio->devid;
     device->domid           = domid;
 
-    device->backend_kind    = LIBXL__DEVICE_KIND_VIRTIO;
+    device->backend_kind    = virtio->backend_type == LIBXL_VIRTIO_BACKEND_QEMU ?
+        LIBXL__DEVICE_KIND_QVIRTIO : LIBXL__DEVICE_KIND_VIRTIO;
     device->kind            = LIBXL__DEVICE_KIND_VIRTIO;
 
     return 0;
@@ -55,12 +67,27 @@ static int libxl__set_xenstore_virtio(libxl__gc *gc, uint32_t domid,
                                       flexarray_t *back, flexarray_t *front,
                                       flexarray_t *ro_front)
 {
-    const char *transport = libxl_virtio_transport_to_string(virtio->transport);
+    const char *transport = libxl_virtio_transport_to_string(virtio->transport),
+               *backend = libxl_virtio_backend_to_string(virtio->backend_type);
 
-    flexarray_append_pair(back, "irq", GCSPRINTF("%u", virtio->irq));
-    flexarray_append_pair(back, "base", GCSPRINTF("%#"PRIx64, virtio->base));
+    if (virtio->transport == LIBXL_VIRTIO_TRANSPORT_MMIO) {
+        flexarray_append_pair(back, "irq", GCSPRINTF("%u", virtio->u.mmio.irq));
+        flexarray_append_pair(back, "base", GCSPRINTF("%#"PRIx64, virtio->u.mmio.base));
+    } else {
+        /*
+         * TODO:
+         * Probably we will also need to store PCI Host bridge details (irq and
+         * mem ranges) this particular PCI device belongs to if emulator cannot
+         * or should not rely on what is described at include/public/arch-arm.h
+         */
+        flexarray_append_pair(back, "bdf", GCSPRINTF("%04x:%02x:%02x.%01x",
+                              virtio->u.pci.domain, virtio->u.pci.bus,
+                              virtio->u.pci.dev, virtio->u.pci.func));
+        flexarray_append_pair(back, "host_id", GCSPRINTF("%u", virtio->u.pci.host_id));
+    }
     flexarray_append_pair(back, "type", GCSPRINTF("%s", virtio->type));
     flexarray_append_pair(back, "transport", GCSPRINTF("%s", transport));
+    flexarray_append_pair(back, "backend_type", GCSPRINTF("%s", backend));
     flexarray_append_pair(back, "grant_usage",
                           libxl_defbool_val(virtio->grant_usage) ? "1" : "0");
 
@@ -84,33 +111,85 @@ static int libxl__virtio_from_xenstore(libxl__gc *gc, const char *libxl_path,
     rc = libxl__backendpath_parse_domid(gc, be_path, &virtio->backend_domid);
     if (rc) goto out;
 
-    rc = libxl__xs_read_checked(gc, XBT_NULL,
-				GCSPRINTF("%s/irq", be_path), &tmp);
-    if (rc) goto out;
+    tmp = libxl__xs_read(gc, XBT_NULL, GCSPRINTF("%s/transport", be_path));
+    if (!tmp) {
+        LOG(ERROR, "Missing xenstore node %s/transport", be_path);
+        rc = ERROR_INVAL;
+        goto out;
+    }
 
-    if (tmp) {
-        virtio->irq = strtoul(tmp, NULL, 0);
+    rc = libxl_virtio_transport_from_string(tmp, &virtio->transport);
+    if (rc) {
+        LOG(ERROR, "Unable to parse xenstore node %s/transport", be_path);
+        goto out;
+    }
+
+    if (virtio->transport != LIBXL_VIRTIO_TRANSPORT_MMIO &&
+        virtio->transport != LIBXL_VIRTIO_TRANSPORT_PCI) {
+        LOG(ERROR, "Unexpected transport for virtio");
+        rc = ERROR_INVAL;
+        goto out;
+    }
+
+    if (virtio->transport == LIBXL_VIRTIO_TRANSPORT_MMIO) {
+        tmp = NULL;
+        rc = libxl__xs_read_checked(gc, XBT_NULL,
+                                    GCSPRINTF("%s/irq", be_path), &tmp);
+        if (rc) goto out;
+
+        if (tmp) {
+            virtio->u.mmio.irq = strtoul(tmp, NULL, 0);
+        }
+
+        tmp = NULL;
+        rc = libxl__xs_read_checked(gc, XBT_NULL,
+                                    GCSPRINTF("%s/base", be_path), &tmp);
+        if (rc) goto out;
+
+        if (tmp) {
+            virtio->u.mmio.base = strtoul(tmp, NULL, 0);
+        }
+    } else {
+        unsigned int domain, bus, dev, func;
+
+        tmp = NULL;
+        rc = libxl__xs_read_checked(gc, XBT_NULL,
+                                    GCSPRINTF("%s/bdf", be_path), &tmp);
+        if (rc) goto out;
+
+        if (tmp) {
+            if (sscanf(tmp, "%04x:%02x:%02x.%01x",
+                &domain, &bus, &dev, &func) != 4) {
+                rc = ERROR_INVAL;
+                goto out;
+            }
+
+            virtio->u.pci.domain = domain;
+            virtio->u.pci.bus = bus;
+            virtio->u.pci.dev = dev;
+            virtio->u.pci.func = func;
+        }
+
+        tmp = NULL;
+        rc = libxl__xs_read_checked(gc, XBT_NULL,
+                                    GCSPRINTF("%s/host_id", be_path), &tmp);
+        if (rc) goto out;
+
+        if (tmp) {
+            virtio->u.pci.host_id = strtoul(tmp, NULL, 0);
+        }
     }
 
     tmp = NULL;
     rc = libxl__xs_read_checked(gc, XBT_NULL,
-				GCSPRINTF("%s/base", be_path), &tmp);
+                                GCSPRINTF("%s/backend_type", be_path), &tmp);
     if (rc) goto out;
 
     if (tmp) {
-        virtio->base = strtoul(tmp, NULL, 0);
-    }
-
-    tmp = NULL;
-    rc = libxl__xs_read_checked(gc, XBT_NULL,
-				GCSPRINTF("%s/transport", be_path), &tmp);
-    if (rc) goto out;
-
-    if (tmp) {
-        if (!strcmp(tmp, "mmio")) {
-            virtio->transport = LIBXL_VIRTIO_TRANSPORT_MMIO;
-        } else {
-            return ERROR_INVAL;
+        rc = libxl_virtio_backend_from_string(tmp, &virtio->backend_type);
+        if (rc) {
+            LOG(ERROR, "Unable to parse xenstore node %s/backend_type", be_path);
+            goto out;
         }
     }
 
@@ -148,6 +227,7 @@ static LIBXL_DEFINE_UPDATE_DEVID(virtio)
 #define libxl_device_virtio_compare NULL
 
 DEFINE_DEVICE_TYPE_STRUCT(virtio, VIRTIO, virtios,
+    .dm_needed = libxl__device_virtio_dm_needed,
     .set_xenstore_config = (device_set_xenstore_config_fn_t)
                            libxl__set_xenstore_virtio,
     .from_xenstore = (device_from_xenstore_fn_t)libxl__virtio_from_xenstore,
