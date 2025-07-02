@@ -19,7 +19,11 @@
 #include <asm/gic.h>
 #include <asm/vgic.h>
 
+#ifdef CONFIG_GICV3_ESPI
+const unsigned int nr_irqs = ESPI_MAX_INTID + 1;
+#else
 const unsigned int nr_irqs = NR_IRQS;
+#endif
 
 static unsigned int local_irqs_type[NR_LOCAL_IRQS];
 static DEFINE_SPINLOCK(local_irqs_type_lock);
@@ -46,12 +50,58 @@ void irq_end_none(struct irq_desc *irq)
 }
 
 static irq_desc_t irq_desc[NR_IRQS - NR_LOCAL_IRQS];
+#ifdef CONFIG_GICV3_ESPI
+static irq_desc_t espi_desc[NR_ESPI_IRQS];
+
+static struct irq_desc *espi_to_desc(unsigned int irq)
+{
+    return &espi_desc[ESPI_INTID2IDX(irq)];
+}
+
+static int __init init_espi_data(void)
+{
+    int irq;
+
+    for ( irq = ESPI_BASE_INTID; irq <= ESPI_MAX_INTID; irq++ )
+    {
+        struct irq_desc *desc = irq_to_desc(irq);
+        int rc = init_one_irq_desc(desc);
+
+        if ( rc )
+            return rc;
+
+        desc->irq = irq;
+        desc->action  = NULL;
+    }
+
+    return 0;
+}
+#else
+/*
+ * This function is stub and will not be called if CONFIG_GICV3_ESPI=n,
+ * because in this case, is_espi will always return false.
+ */
+static struct irq_desc *espi_to_desc(unsigned int irq)
+{
+    ASSERT_UNREACHABLE();
+    return NULL;
+}
+
+static int __init init_espi_data(void)
+{
+    return 0;
+}
+#endif
+
 static DEFINE_PER_CPU(irq_desc_t[NR_LOCAL_IRQS], local_irq_desc);
 
 struct irq_desc *__irq_to_desc(unsigned int irq)
 {
     if ( irq < NR_LOCAL_IRQS )
         return &this_cpu(local_irq_desc)[irq];
+
+    if ( is_espi(irq) )
+        return espi_to_desc(irq);
 
     return &irq_desc[irq-NR_LOCAL_IRQS];
 }
@@ -79,7 +129,7 @@ static int __init init_irq_data(void)
         desc->action  = NULL;
     }
 
-    return 0;
+    return init_espi_data();
 }
 
 static int init_local_irq_data(unsigned int cpu)
