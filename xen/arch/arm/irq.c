@@ -248,7 +248,7 @@ int request_irq(unsigned int irq, unsigned int irqflags,
      * which interrupt is which (messes up the interrupt freeing
      * logic etc).
      */
-    if ( irq >= nr_irqs )
+    if ( irq >= nr_irqs && !is_espi(irq))
         return -EINVAL;
     if ( !handler )
         return -EINVAL;

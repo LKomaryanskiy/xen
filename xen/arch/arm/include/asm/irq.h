@@ -71,6 +71,11 @@ static inline bool is_lpi(unsigned int irq)
     return irq >= LPI_OFFSET;
 }
 
+static inline bool is_espi(unsigned int irq)
+{
+    return (irq >= ESPI_BASE_INTID && irq <= ESPI_MAX_INTID);
+}
+
 #define domain_pirq_to_irq(d, pirq) (pirq)
 
 bool is_assignable_irq(unsigned int irq);
