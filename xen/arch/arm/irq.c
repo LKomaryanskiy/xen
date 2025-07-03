@@ -604,8 +604,8 @@ err:
 
 bool is_assignable_irq(unsigned int irq)
 {
-    /* For now, we can only route SPIs to the guest */
-    return (irq >= NR_LOCAL_IRQS) && (irq < gic_number_lines());
+    /* For now, we can only route SPIs and eSPIs to the guest */
+    return (((irq >= NR_LOCAL_IRQS) && (irq < gic_number_lines())) || is_espi(irq));
 }
 
 /*
