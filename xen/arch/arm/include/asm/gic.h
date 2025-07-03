@@ -306,8 +306,21 @@ extern void gic_dump_vgic_info(struct vcpu *v);
 
 /* Number of interrupt lines */
 extern unsigned int gic_number_lines(void);
+#ifdef CONFIG_GICV3_ESPI
+extern unsigned int gic_number_espis(void);
+
+static inline bool gic_is_valid_espi(unsigned int irq)
+{
+    return (irq >= ESPI_BASE_INTID && irq < ESPI_IDX2INTID(gic_number_espis()));
+}
+#endif
+
 static inline bool gic_is_valid_irq(unsigned int irq)
 {
+#ifdef CONFIG_GICV3_ESPI
+    if ( gic_is_valid_espi(irq) )
+        return true;
+#endif
     return irq < gic_number_lines();
 }
 
@@ -325,6 +338,10 @@ struct gic_info {
     enum gic_version hw_version;
     /* Number of GIC lines supported */
     unsigned int nr_lines;
+#ifdef CONFIG_GICV3_ESPI
+    /* Number of GIC eSPI supported */
+    unsigned int nr_espi;
+#endif
     /* Number of LR registers */
     uint8_t nr_lrs;
     /* Maintenance irq number */
