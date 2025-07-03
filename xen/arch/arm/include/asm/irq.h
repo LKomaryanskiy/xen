@@ -41,7 +41,7 @@ struct arch_irq_desc {
  * not included in this number.
  */
 #define NR_IRQS		1024
-
+#define SPI_MAX_INTID   1019
 #define LPI_OFFSET      8192
 
 #define ESPI_BASE_INTID 4096
