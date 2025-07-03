@@ -487,6 +487,32 @@ void __iomem *convert_offset(struct irq_desc *irqd, u32 offset)
                 default:
                     break;
             }
+        case ESPI_BASE_INTID ... ESPI_MAX_INTID:
+            u32 irq_index = irqd->irq - ESPI_BASE_INTID;
+
+            switch (offset)
+            {
+                case GICD_ISENABLER:
+                    return (GICD + GICD_ISENABLERnE + (irq_index / 32) * 4);
+                case GICD_ICENABLER:
+                    return (GICD + GICD_ICENABLERnE + (irq_index / 32) * 4);
+                case GICD_ISPENDR:
+                    return (GICD + GICD_ISPENDRnE + (irq_index / 32) * 4);
+                case GICD_ICPENDR:
+                    return (GICD + GICD_ICPENDRnE + (irq_index / 32) * 4);
+                case GICD_ISACTIVER:
+                    return (GICD + GICD_ISACTIVERnE + (irq_index / 32) * 4);
+                case GICD_ICACTIVER:
+                    return (GICD + GICD_ICACTIVERnE + (irq_index / 32) * 4);
+                case GICD_ICFGR:
+                    return (GICD + GICD_ICFGRnE + (irq_index / 16) * 4);
+                case GICD_IROUTER:
+                    return (GICD + GICD_IROUTERnE + irq_index * 8);
+                case GICD_IPRIORITYR:
+                    return (GICD + GICD_IPRIORITYRnE + irq_index);
+                default:
+                    break;
+            }
         default:
             break;
     }
@@ -649,6 +675,7 @@ static void __init gicv3_dist_init(void)
     uint32_t type;
     uint64_t affinity;
     unsigned int nr_lines;
+    unsigned int espi_nr;
     int i;
 
     /* Disable the distributor */
@@ -656,6 +683,7 @@ static void __init gicv3_dist_init(void)
 
     type = readl_relaxed(GICD + GICD_TYPER);
     nr_lines = 32 * ((type & GICD_TYPE_LINES) + 1);
+    espi_nr = GICD_TYPER_ESPIS_NUM(type);
 
     if ( type & GICD_TYPE_LPIS )
         gicv3_lpi_init_host_lpis(GICD_TYPE_ID_BITS(type));
@@ -671,9 +699,15 @@ static void __init gicv3_dist_init(void)
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i += 16 )
         writel_relaxed(0, GICD + GICD_ICFGR + (i / 16) * 4);
 
+    for (i = 0; i < espi_nr; i += 16)
+        writel_relaxed(0, GICD + GICD_ICFGRnE + (i / 16) * 4);
+
     /* Default priority for global interrupts */
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i += 4 )
         writel_relaxed(GIC_PRI_IRQ_ALL, GICD + GICD_IPRIORITYR + (i / 4) * 4);
+
+    for (i = 0; i < espi_nr; i += 4)
+        writel_relaxed(GIC_PRI_IRQ_ALL, GICD + GICD_IPRIORITYRnE + + (i / 4) * 4);
 
     /* Disable/deactivate all global interrupts */
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i += 32 )
@@ -682,12 +716,21 @@ static void __init gicv3_dist_init(void)
         writel_relaxed(0xffffffffU, GICD + GICD_ICACTIVER + (i / 32) * 4);
     }
 
+    for ( i = 0; i < espi_nr; i += 32 )
+    {
+        writel_relaxed(0xffffffffU, GICD + GICD_ICENABLERnE + (i / 32) * 4);
+        writel_relaxed(0xffffffffU, GICD + GICD_ICACTIVERnE + (i / 32) * 4);
+    }
+
     /*
      * Configure SPIs as non-secure Group-1. This will only matter
      * if the GIC only has a single security state.
      */
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i += 32 )
         writel_relaxed(GENMASK(31, 0), GICD + GICD_IGROUPR + (i / 32) * 4);
+
+    for (i = 0; i < espi_nr; i += 32)
+        writel_relaxed(GENMASK(31, 0), GICD + GICD_IGROUPRnE + (i / 32) * 4);
 
     gicv3_dist_wait_for_rwp();
 
@@ -702,6 +745,9 @@ static void __init gicv3_dist_init(void)
 
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i++ )
         writeq_relaxed_non_atomic(affinity, GICD + GICD_IROUTER + i * 8);
+
+    for (i = 0; i < espi_nr; i++)
+        writeq_relaxed_non_atomic(affinity, GICD + GICD_IROUTERnE + i * 8);
 }
 
 static int gicv3_enable_redist(void)
