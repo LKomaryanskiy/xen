@@ -618,7 +618,7 @@ int route_irq_to_guest(struct domain *d, unsigned int virq,
     unsigned long flags;
     int retval = 0;
 
-    if ( virq >= vgic_num_irqs(d) )
+    if ( virq >= vgic_num_irqs(d) && !is_espi(virq))
     {
         printk(XENLOG_G_ERR
                "the vIRQ number %u is too high for domain %u (max = %u)\n",
