@@ -93,6 +93,7 @@ hw_irq_controller no_irq_type = {
 };
 
 static irq_desc_t irq_desc[NR_IRQS];
+static irq_desc_t espi_desc[NR_IRQS];
 static DEFINE_PER_CPU(irq_desc_t[NR_LOCAL_IRQS], local_irq_desc);
 
 struct irq_desc *__irq_to_desc(int irq)
@@ -100,7 +101,10 @@ struct irq_desc *__irq_to_desc(int irq)
     if ( irq < NR_LOCAL_IRQS )
         return &this_cpu(local_irq_desc)[irq];
 
-    return &irq_desc[irq-NR_LOCAL_IRQS];
+    if (irq < NR_IRQS)
+        return &irq_desc[irq-NR_LOCAL_IRQS];
+
+    return &espi_desc[irq-ESPI_BASE_INTID];
 }
 
 int arch_init_one_irq_desc(struct irq_desc *desc)
@@ -115,6 +119,18 @@ static int __init init_irq_data(void)
     int irq;
 
     for ( irq = NR_LOCAL_IRQS; irq < NR_IRQS; irq++ )
+    {
+        struct irq_desc *desc = irq_to_desc(irq);
+        int rc = init_one_irq_desc(desc);
+
+        if ( rc )
+            return rc;
+
+        desc->irq = irq;
+        desc->action  = NULL;
+    }
+
+    for ( irq = ESPI_BASE_INTID; irq <= ESPI_MAX_INTID; irq++ )
     {
         struct irq_desc *desc = irq_to_desc(irq);
         int rc = init_one_irq_desc(desc);
@@ -232,7 +248,7 @@ int request_irq(unsigned int irq, unsigned int irqflags,
      * which interrupt is which (messes up the interrupt freeing
      * logic etc).
      */
-    if ( irq >= nr_irqs )
+    if ( irq >= nr_irqs && !is_espi(irq))
         return -EINVAL;
     if ( !handler )
         return -EINVAL;
@@ -575,7 +591,7 @@ err:
 bool is_assignable_irq(unsigned int irq)
 {
     /* For now, we can only route SPIs to the guest */
-    return (irq >= NR_LOCAL_IRQS) && (irq < gic_number_lines());
+    return (((irq >= NR_LOCAL_IRQS) && (irq < gic_number_lines())) || is_espi(irq));
 }
 
 /*
@@ -602,7 +618,7 @@ int route_irq_to_guest(struct domain *d, unsigned int virq,
     unsigned long flags;
     int retval = 0;
 
-    if ( virq >= vgic_num_irqs(d) )
+    if ( virq >= vgic_num_irqs(d) && !is_espi(virq))
     {
         printk(XENLOG_G_ERR
                "the vIRQ number %u is too high for domain %u (max = %u)\n",

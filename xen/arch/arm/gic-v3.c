@@ -447,17 +447,85 @@ static void gicv3_dump_state(const struct vcpu *v)
     }
 }
 
+void __iomem *convert_offset(struct irq_desc *irqd, u32 offset)
+{
+    switch (irqd->irq)
+    {
+        case 0 ... (NR_GIC_LOCAL_IRQS - 1):
+            switch (offset)
+            {
+                case GICD_ISENABLER:
+                case GICD_ICENABLER:
+                case GICD_ISPENDR:
+                case GICD_ICPENDR:
+                case GICD_ISACTIVER:
+                case GICD_ICACTIVER:
+                    return (GICD_RDIST_SGI_BASE + offset);
+                case GICD_ICFGR:
+                    return (GICD_RDIST_SGI_BASE + GICR_ICFGR1);
+                case GICD_IPRIORITYR:
+                    return (GICD_RDIST_SGI_BASE + GICR_IPRIORITYR0 + irqd->irq);
+                default:
+                    break;
+            }
+        case NR_GIC_LOCAL_IRQS ... SPI_MAX_INTID:
+            switch (offset)
+            {
+                case GICD_ISENABLER:
+                case GICD_ICENABLER:
+                case GICD_ISPENDR:
+                case GICD_ICPENDR:
+                case GICD_ISACTIVER:
+                case GICD_ICACTIVER:
+                    return (GICD + offset + (irqd->irq / 32) * 4);
+                case GICD_ICFGR:
+                    return (GICD + GICD_ICFGR + (irqd->irq / 16) * 4);
+                case GICD_IROUTER:
+                    return (GICD + GICD_IROUTER + irqd->irq * 8);
+                case GICD_IPRIORITYR:
+                    return (GICD + GICD_IPRIORITYR + irqd->irq);
+                default:
+                    break;
+            }
+        case ESPI_BASE_INTID ... ESPI_MAX_INTID:
+            u32 irq_index = irqd->irq - ESPI_BASE_INTID;
+
+            switch (offset)
+            {
+                case GICD_ISENABLER:
+                    return (GICD + GICD_ISENABLERnE + (irq_index / 32) * 4);
+                case GICD_ICENABLER:
+                    return (GICD + GICD_ICENABLERnE + (irq_index / 32) * 4);
+                case GICD_ISPENDR:
+                    return (GICD + GICD_ISPENDRnE + (irq_index / 32) * 4);
+                case GICD_ICPENDR:
+                    return (GICD + GICD_ICPENDRnE + (irq_index / 32) * 4);
+                case GICD_ISACTIVER:
+                    return (GICD + GICD_ISACTIVERnE + (irq_index / 32) * 4);
+                case GICD_ICACTIVER:
+                    return (GICD + GICD_ICACTIVERnE + (irq_index / 32) * 4);
+                case GICD_ICFGR:
+                    return (GICD + GICD_ICFGRnE + (irq_index / 16) * 4);
+                case GICD_IROUTER:
+                    return (GICD + GICD_IROUTERnE + irq_index * 8);
+                case GICD_IPRIORITYR:
+                    return (GICD + GICD_IPRIORITYRnE + irq_index);
+                default:
+                    break;
+            }
+        default:
+            break;
+    }
+
+    return NULL;
+}
+
 static void gicv3_poke_irq(struct irq_desc *irqd, u32 offset, bool wait_for_rwp)
 {
     u32 mask = 1U << (irqd->irq % 32);
-    void __iomem *base;
+    void __iomem *addr = convert_offset(irqd, offset);
 
-    if ( irqd->irq < NR_GIC_LOCAL_IRQS )
-        base = GICD_RDIST_SGI_BASE;
-    else
-        base = GICD;
-
-    writel_relaxed(mask, base + offset + (irqd->irq / 32) * 4);
+    writel_relaxed(mask, addr);
 
     if ( wait_for_rwp )
         gicv3_wait_for_rwp(irqd->irq);
@@ -465,15 +533,9 @@ static void gicv3_poke_irq(struct irq_desc *irqd, u32 offset, bool wait_for_rwp)
 
 static bool gicv3_peek_irq(struct irq_desc *irqd, u32 offset)
 {
-    void __iomem *base;
-    unsigned int irq = irqd->irq;
+    void __iomem *addr = convert_offset(irqd, offset);
 
-    if ( irq >= NR_GIC_LOCAL_IRQS)
-        base = GICD + (irq / 32) * 4;
-    else
-        base = GICD_RDIST_SGI_BASE;
-
-    return !!(readl(base + offset) & (1U << (irq % 32)));
+    return !!(readl(addr) & (1U << (irqd->irq % 32)));
 }
 
 static void gicv3_unmask_irq(struct irq_desc *irqd)
@@ -560,30 +622,26 @@ static inline uint64_t gicv3_mpidr_to_affinity(int cpu)
 static void gicv3_set_irq_type(struct irq_desc *desc, unsigned int type)
 {
     uint32_t cfg, actual, edgebit;
-    void __iomem *base;
-    unsigned int irq = desc->irq;
+    void __iomem *addr;
 
     /* SGI's are always edge-triggered not need to call GICD_ICFGR0 */
-    ASSERT(irq >= NR_GIC_SGI);
+    ASSERT(desc->irq >= NR_GIC_SGI);
 
     spin_lock(&gicv3.lock);
 
-    if ( irq >= NR_GIC_LOCAL_IRQS)
-        base = GICD + GICD_ICFGR + (irq / 16) * 4;
-    else
-        base = GICD_RDIST_SGI_BASE + GICR_ICFGR1;
+    addr = convert_offset(desc, GICD_ICFGR);
 
-    cfg = readl_relaxed(base);
+    cfg = readl_relaxed(addr);
 
-    edgebit = 2u << (2 * (irq % 16));
+    edgebit = 2u << (2 * (desc->irq % 16));
     if ( type & IRQ_TYPE_LEVEL_MASK )
         cfg &= ~edgebit;
     else if ( type & IRQ_TYPE_EDGE_BOTH )
         cfg |= edgebit;
 
-    writel_relaxed(cfg, base);
+    writel_relaxed(cfg, addr);
 
-    actual = readl_relaxed(base);
+    actual = readl_relaxed(addr);
     if ( ( cfg & edgebit ) ^ ( actual & edgebit ) )
     {
         printk(XENLOG_WARNING "GICv3: WARNING: "
@@ -602,15 +660,12 @@ static void gicv3_set_irq_type(struct irq_desc *desc, unsigned int type)
 static void gicv3_set_irq_priority(struct irq_desc *desc,
                                    unsigned int priority)
 {
-    unsigned int irq = desc->irq;
+    void __iomem *addr;
 
     spin_lock(&gicv3.lock);
 
-    /* Set priority */
-    if ( irq < NR_GIC_LOCAL_IRQS )
-        writeb_relaxed(priority, GICD_RDIST_SGI_BASE + GICR_IPRIORITYR0 + irq);
-    else
-        writeb_relaxed(priority, GICD + GICD_IPRIORITYR + irq);
+    addr = convert_offset(desc, GICD_IPRIORITYR);
+    writeb_relaxed(priority, addr);
 
     spin_unlock(&gicv3.lock);
 }
@@ -620,6 +675,7 @@ static void __init gicv3_dist_init(void)
     uint32_t type;
     uint64_t affinity;
     unsigned int nr_lines;
+    unsigned int gic_espi_nr;
     int i;
 
     /* Disable the distributor */
@@ -627,6 +683,7 @@ static void __init gicv3_dist_init(void)
 
     type = readl_relaxed(GICD + GICD_TYPER);
     nr_lines = 32 * ((type & GICD_TYPE_LINES) + 1);
+    gic_espi_nr = GICD_TYPER_ESPIS_NUM(type);
 
     if ( type & GICD_TYPE_LPIS )
         gicv3_lpi_init_host_lpis(GICD_TYPE_ID_BITS(type));
@@ -642,9 +699,15 @@ static void __init gicv3_dist_init(void)
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i += 16 )
         writel_relaxed(0, GICD + GICD_ICFGR + (i / 16) * 4);
 
+    for (i = 0; i < gic_espi_nr; i += 16)
+        writel_relaxed(0, GICD + GICD_ICFGRnE + (i / 16) * 4);
+
     /* Default priority for global interrupts */
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i += 4 )
         writel_relaxed(GIC_PRI_IRQ_ALL, GICD + GICD_IPRIORITYR + (i / 4) * 4);
+
+    for (i = 0; i < gic_espi_nr; i += 4)
+        writel_relaxed(GIC_PRI_IRQ_ALL, GICD + GICD_IPRIORITYRnE + + (i / 4) * 4);
 
     /* Disable/deactivate all global interrupts */
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i += 32 )
@@ -653,12 +716,21 @@ static void __init gicv3_dist_init(void)
         writel_relaxed(0xffffffffU, GICD + GICD_ICACTIVER + (i / 32) * 4);
     }
 
+    for ( i = 0; i < gic_espi_nr; i += 32 )
+    {
+        writel_relaxed(0xffffffffU, GICD + GICD_ICENABLERnE + (i / 32) * 4);
+        writel_relaxed(0xffffffffU, GICD + GICD_ICACTIVERnE + (i / 32) * 4);
+    }
+
     /*
      * Configure SPIs as non-secure Group-1. This will only matter
      * if the GIC only has a single security state.
      */
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i += 32 )
         writel_relaxed(GENMASK(31, 0), GICD + GICD_IGROUPR + (i / 32) * 4);
+
+    for (i = 0; i < gic_espi_nr; i += 32)
+        writel_relaxed(GENMASK(31, 0), GICD + GICD_IGROUPRnE + (i / 32) * 4);
 
     gicv3_dist_wait_for_rwp();
 
@@ -673,6 +745,9 @@ static void __init gicv3_dist_init(void)
 
     for ( i = NR_GIC_LOCAL_IRQS; i < nr_lines; i++ )
         writeq_relaxed_non_atomic(affinity, GICD + GICD_IROUTER + i * 8);
+
+    for (i = 0; i < gic_espi_nr; i++)
+        writeq_relaxed_non_atomic(affinity, GICD + GICD_IROUTERnE + i * 8);
 }
 
 static int gicv3_enable_redist(void)
@@ -1275,6 +1350,7 @@ static void gicv3_irq_set_affinity(struct irq_desc *desc, const cpumask_t *mask)
 {
     unsigned int cpu;
     uint64_t affinity;
+    void __iomem *addr = convert_offset(desc, GICD_IROUTER);
 
     ASSERT(!cpumask_empty(mask));
 
@@ -1286,7 +1362,7 @@ static void gicv3_irq_set_affinity(struct irq_desc *desc, const cpumask_t *mask)
     affinity &= ~GICD_IROUTER_SPI_MODE_ANY;
 
     if ( desc->irq >= NR_GIC_LOCAL_IRQS )
-        writeq_relaxed_non_atomic(affinity, (GICD + GICD_IROUTER + desc->irq * 8));
+        writeq_relaxed_non_atomic(affinity, addr);
 
     spin_unlock(&gicv3.lock);
 }

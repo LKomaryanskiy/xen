@@ -148,8 +148,10 @@ struct vgic_dist {
     spinlock_t lock;
     uint32_t ctlr;
     int nr_spis; /* Number of SPIs */
+    int nr_espis; /* Number of eSPIs */
     unsigned long *allocated_irqs; /* bitmap of IRQs allocated */
     struct vgic_irq_rank *shared_irqs;
+    struct vgic_irq_rank *ext_shared_irqs;
     /*
      * SPIs are domain global, SGIs and PPIs are per-VCPU and stored in
      * struct arch_vcpu.
@@ -248,6 +250,7 @@ struct vgic_ops {
 
 /* Number of ranks of interrupt registers for a domain */
 #define DOMAIN_NR_RANKS(d) (((d)->arch.vgic.nr_spis+31)/32)
+#define DOMAIN_NR_EXT_RANKS(d) (((d)->arch.vgic.nr_espis+31)/32)
 
 #define vgic_lock(v)   spin_lock_irq(&(v)->domain->arch.vgic.lock)
 #define vgic_unlock(v) spin_unlock_irq(&(v)->domain->arch.vgic.lock)
@@ -308,6 +311,10 @@ extern struct vgic_irq_rank *vgic_rank_offset(struct vcpu *v,
                                               unsigned int b,
                                               unsigned int n,
                                               unsigned int s);
+extern struct vgic_irq_rank *vgic_ext_rank_offset(struct vcpu *v,
+                                                  unsigned int b,
+                                                  unsigned int n,
+                                                  unsigned int s);
 extern struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq);
 extern void vgic_disable_irqs(struct vcpu *v, uint32_t r, unsigned int n);
 extern void vgic_enable_irqs(struct vcpu *v, uint32_t r, unsigned int n);
@@ -333,6 +340,8 @@ extern void vgic_check_inflight_irqs_pending(struct domain *d, struct vcpu *v,
  * as it's mostly used for allocating the pending_irq and irq_desc array,
  * in which LPIs don't participate.
  */
+ /* TODO: remove hardcode */
+#define EXT_ESPI_NR (1024)
 #define vgic_num_irqs(d)        ((d)->arch.vgic.nr_spis + 32)
 
 /*
