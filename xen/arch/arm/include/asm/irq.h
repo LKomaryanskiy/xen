@@ -41,8 +41,11 @@ struct arch_irq_desc {
  * not included in this number.
  */
 #define NR_IRQS		1024
-
+#define SPI_MAX_INTID   1019
 #define LPI_OFFSET      8192
+
+#define ESPI_BASE_INTID 4096
+#define ESPI_MAX_INTID  5119
 
 /* LPIs are always numbered starting at 8192, so 0 is a good invalid case. */
 #define INVALID_LPI     0
@@ -66,6 +69,11 @@ void do_IRQ(struct cpu_user_regs *regs, unsigned int irq, int is_fiq);
 static inline bool is_lpi(unsigned int irq)
 {
     return irq >= LPI_OFFSET;
+}
+
+static inline bool is_espi(unsigned int irq)
+{
+    return (irq >= ESPI_BASE_INTID && irq <= ESPI_MAX_INTID);
 }
 
 #define domain_pirq_to_irq(d, pirq) (pirq)

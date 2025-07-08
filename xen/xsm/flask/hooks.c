@@ -113,9 +113,9 @@ static int domain_has_xen(struct domain *d, uint32_t perms)
 
 static int get_irq_sid(int irq, uint32_t *sid, struct avc_audit_data *ad)
 {
-    if ( irq >= nr_irqs || irq < 0 )
+    if ( (irq >= nr_irqs && !is_espi(irq)) || irq < 0)
         return -EINVAL;
-    if ( irq < nr_static_irqs ) {
+    if ( irq < nr_static_irqs || is_espi(irq) ) {
         if (ad) {
             AVC_AUDIT_DATA_INIT(ad, IRQ);
             ad->irq = irq;
