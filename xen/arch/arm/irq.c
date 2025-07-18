@@ -22,7 +22,15 @@
 #include <asm/gic.h>
 #include <asm/vgic.h>
 
+#ifdef CONFIG_GICV3_ESPI
+/*
+ * To operate with IRQs in the eSPI range (4096-5119),
+ * we need to add the eSPI base interrupt ID.
+ */
+const unsigned int nr_irqs = ESPI_BASE_INTID + NR_IRQS;
+#else
 const unsigned int nr_irqs = NR_IRQS;
+#endif
 
 static unsigned int local_irqs_type[NR_LOCAL_IRQS];
 static DEFINE_SPINLOCK(local_irqs_type_lock);
@@ -93,12 +101,20 @@ hw_irq_controller no_irq_type = {
 };
 
 static irq_desc_t irq_desc[NR_IRQS];
+#ifdef CONFIG_GICV3_ESPI
+static irq_desc_t espi_desc[NR_IRQS];
+#endif
 static DEFINE_PER_CPU(irq_desc_t[NR_LOCAL_IRQS], local_irq_desc);
 
 struct irq_desc *__irq_to_desc(int irq)
 {
     if ( irq < NR_LOCAL_IRQS )
         return &this_cpu(local_irq_desc)[irq];
+
+#ifdef CONFIG_GICV3_ESPI
+    if ( is_espi(irq) )
+        return &espi_desc[ESPI_INTID2IDX(irq)];
+#endif
 
     return &irq_desc[irq-NR_LOCAL_IRQS];
 }
@@ -125,6 +141,20 @@ static int __init init_irq_data(void)
         desc->irq = irq;
         desc->action  = NULL;
     }
+
+#ifdef CONFIG_GICV3_ESPI
+    for ( irq = ESPI_BASE_INTID; irq <= ESPI_MAX_INTID; irq++ )
+    {
+        struct irq_desc *desc = irq_to_desc(irq);
+        int rc = init_one_irq_desc(desc);
+
+        if ( rc )
+            return rc;
+
+        desc->irq = irq;
+        desc->action  = NULL;
+    }
+#endif
 
     return 0;
 }
@@ -574,8 +604,8 @@ err:
 
 bool is_assignable_irq(unsigned int irq)
 {
-    /* For now, we can only route SPIs to the guest */
-    return (irq >= NR_LOCAL_IRQS) && (irq < gic_number_lines());
+    /* For now, we can only route SPIs and eSPIs to the guest */
+    return (((irq >= NR_LOCAL_IRQS) && (irq < gic_number_lines())) || is_espi(irq));
 }
 
 /*
@@ -591,7 +621,7 @@ bool irq_type_set_by_domain(const struct domain *d)
 
 /*
  * Route an IRQ to a specific guest.
- * For now only SPIs are assignable to the guest.
+ * For now only SPIs and eSPIs are assignable to the guest.
  */
 int route_irq_to_guest(struct domain *d, unsigned int virq,
                        unsigned int irq, const char * devname)
@@ -602,7 +632,7 @@ int route_irq_to_guest(struct domain *d, unsigned int virq,
     unsigned long flags;
     int retval = 0;
 
-    if ( virq >= vgic_num_irqs(d) )
+    if ( virq >= vgic_num_irqs(d) && !is_espi(virq))
     {
         printk(XENLOG_G_ERR
                "the vIRQ number %u is too high for domain %u (max = %u)\n",
