@@ -27,8 +27,81 @@
 
 bool vgic_is_valid_line(struct domain *d, unsigned int virq)
 {
+#ifdef CONFIG_GICV3_ESPI
+    if ( virq >= ESPI_BASE_INTID &&
+         virq < ESPI_IDX2INTID(d->arch.vgic.nr_espis) )
+        return true;
+#endif
+
     return virq < vgic_num_irqs(d);
 }
+
+#ifdef CONFIG_GICV3_ESPI
+/*
+ * Since eSPI indexes start from 4096 and numbers from 1024 to
+ * 4095 are forbidden, we need to check both lower and upper
+ * limits for ranks.
+ */
+static inline bool is_valid_espi_rank(struct domain *d, unsigned int rank)
+{
+    return rank >= EXT_RANK_MIN &&
+           EXT_RANK_NUM2IDX(rank) < DOMAIN_NR_EXT_RANKS(d);
+}
+
+static inline struct vgic_irq_rank *vgic_get_espi_rank(struct vcpu *v,
+                                                       unsigned int rank)
+{
+    return &v->domain->arch.vgic.ext_shared_irqs[EXT_RANK_NUM2IDX(rank)];
+}
+
+static inline bool vgic_reserve_espi_virq(struct domain *d, unsigned int virq)
+{
+    return !test_and_set_bit(ESPI_INTID2IDX(virq) + vgic_num_irqs(d),
+                             d->arch.vgic.allocated_irqs);
+}
+
+static void arch_move_espis(struct vcpu *v)
+{
+    const cpumask_t *cpu_mask = cpumask_of(v->processor);
+    struct domain *d = v->domain;
+    struct pending_irq *p;
+    struct vcpu *v_target;
+    unsigned int i;
+
+    for ( i = ESPI_BASE_INTID;
+          i < EXT_RANK_IDX2NUM(d->arch.vgic.nr_espis); i++ )
+    {
+        v_target = vgic_get_target_vcpu(v, i);
+        p = irq_to_pending(v_target, i);
+
+        if ( v_target == v && !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
+            irq_set_affinity(p->desc, cpu_mask);
+    }
+}
+#else
+static inline bool is_valid_espi_rank(struct domain *d, unsigned int rank)
+{
+    return false;
+}
+
+/*
+ * This function is stub and will not be called if CONFIG_GICV3_ESPI=n,
+ * because in this case, is_valid_espi_rank will always return false.
+ */
+static inline struct vgic_irq_rank *vgic_get_espi_rank(struct vcpu *v,
+                                                       unsigned int rank)
+{
+    ASSERT_UNREACHABLE();
+    return NULL;
+}
+
+static inline bool vgic_reserve_espi_virq(struct domain *d, unsigned int virq)
+{
+    return false;
+}
+
+static void arch_move_espis(struct vcpu *v) { }
+#endif
 
 static inline struct vgic_irq_rank *vgic_get_rank(struct vcpu *v,
                                                   unsigned int rank)
@@ -37,6 +110,8 @@ static inline struct vgic_irq_rank *vgic_get_rank(struct vcpu *v,
         return v->arch.vgic.private_irqs;
     else if ( rank <= DOMAIN_NR_RANKS(v->domain) )
         return &v->domain->arch.vgic.shared_irqs[rank - 1];
+    else if ( is_valid_espi_rank(v->domain, rank) )
+        return vgic_get_espi_rank(v, rank);
     else
         return NULL;
 }
@@ -117,6 +192,85 @@ int domain_vgic_register(struct domain *d, unsigned int *mmio_count)
     return 0;
 }
 
+#ifdef CONFIG_GICV3_ESPI
+/*
+ * The function behavior is the same as for regular SPIs (vgic_rank_offset),
+ * but it operates with extended SPI ranks.
+ */
+struct vgic_irq_rank *vgic_ext_rank_offset(struct vcpu *v, unsigned int b,
+                                           unsigned int n, unsigned int s)
+{
+    unsigned int rank = REG_RANK_NR(b, (n >> s));
+
+    return vgic_get_rank(v, rank + EXT_RANK_MIN);
+}
+
+static unsigned int vgic_num_spi_lines(struct domain *d)
+{
+    return d->arch.vgic.nr_spis + d->arch.vgic.nr_espis;
+}
+
+static int init_vgic_espi(struct domain *d)
+{
+    unsigned int i, idx;
+
+    if ( d->arch.vgic.nr_espis == 0 )
+        return 0;
+
+    d->arch.vgic.ext_shared_irqs =
+        xzalloc_array(struct vgic_irq_rank, DOMAIN_NR_EXT_RANKS(d));
+    if ( d->arch.vgic.ext_shared_irqs == NULL )
+        return -ENOMEM;
+
+    for ( i = d->arch.vgic.nr_spis, idx = 0;
+          i < vgic_num_spi_lines(d); i++, idx++ )
+        vgic_init_pending_irq(&d->arch.vgic.pending_irqs[i],
+                              ESPI_IDX2INTID(idx));
+
+    for ( i = 0; i < DOMAIN_NR_EXT_RANKS(d); i++ )
+        vgic_rank_init(&d->arch.vgic.ext_shared_irqs[i], i, 0);
+
+    return 0;
+}
+
+struct pending_irq *espi_to_pending(struct domain *d, unsigned int irq)
+{
+    irq = ESPI_INTID2IDX(irq) + d->arch.vgic.nr_spis;
+    return &d->arch.vgic.pending_irqs[irq];
+}
+#else
+static unsigned int init_vgic_espi(struct domain *d)
+{
+    return 0;
+}
+
+static unsigned int vgic_num_spi_lines(struct domain *d)
+{
+    return d->arch.vgic.nr_spis;
+}
+
+struct pending_irq *espi_to_pending(struct domain *d, unsigned int irq)
+{
+    return NULL;
+}
+
+/*
+ * It is expected that, in the case of CONFIG_GICV3_ESPI=n, the function will
+ * return NULL. In this scenario, mmio_read/mmio_write will be treated as
+ * RAZ/WI, as expected.
+ */
+struct vgic_irq_rank *vgic_ext_rank_offset(struct vcpu *v, unsigned int b,
+                                           unsigned int n, unsigned int s)
+{
+    return NULL;
+}
+#endif
+
+static unsigned int vgic_num_alloc_irqs(struct domain *d)
+{
+    return vgic_num_spi_lines(d) + NR_LOCAL_IRQS;
+}
+
 int domain_vgic_init(struct domain *d, unsigned int nr_spis)
 {
     int i;
@@ -130,6 +284,36 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
      * need to make sure the number of SPIs is a multiple of 32.
      */
     nr_spis = ROUNDUP(nr_spis, 32);
+
+#ifdef CONFIG_GICV3_ESPI
+    /*
+     * During domain creation, the dom0less DomUs code or toolstack specifies
+     * the maximum INTID, which is defined in the domain config subtracted by
+     * 32 to cover the local IRQs (please see the comment to VGIC_DEF_NR_SPIS).
+     * To compute the actual number of eSPI that will be usable for,
+     * add back 32.
+     */
+    if ( nr_spis + 32 > ESPI_IDX2INTID(NR_ESPI_IRQS) )
+        return -EINVAL;
+
+    if ( nr_spis + 32 >= ESPI_BASE_INTID )
+    {
+        d->arch.vgic.nr_espis = min(nr_spis - ESPI_BASE_INTID + 32, 1024U);
+        /* Verify if GIC HW can handle provided INTID */
+        if ( d->arch.vgic.nr_espis > gic_number_espis() )
+            return -EINVAL;
+        /*
+         * Set the maximum available number for regular
+         * SPI to pass the next check
+         */
+        nr_spis = VGIC_DEF_NR_SPIS;
+    }
+    else
+    {
+        /* Domain will use the regular SPI range */
+        d->arch.vgic.nr_espis = 0;
+    }
+#endif
 
     /* Limit the number of virtual SPIs supported to (1020 - 32) = 988  */
     if ( nr_spis > (1020 - NR_LOCAL_IRQS) )
@@ -145,7 +329,7 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
         return -ENOMEM;
 
     d->arch.vgic.pending_irqs =
-        xzalloc_array(struct pending_irq, d->arch.vgic.nr_spis);
+        xzalloc_array(struct pending_irq, vgic_num_spi_lines(d));
     if ( d->arch.vgic.pending_irqs == NULL )
         return -ENOMEM;
 
@@ -156,12 +340,16 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
     for ( i = 0; i < DOMAIN_NR_RANKS(d); i++ )
         vgic_rank_init(&d->arch.vgic.shared_irqs[i], i + 1, 0);
 
+    ret = init_vgic_espi(d);
+    if ( ret )
+        return ret;
+
     ret = d->arch.vgic.handler->domain_init(d);
     if ( ret )
         return ret;
 
     d->arch.vgic.allocated_irqs =
-        xzalloc_array(unsigned long, BITS_TO_LONGS(vgic_num_irqs(d)));
+        xzalloc_array(unsigned long, BITS_TO_LONGS(vgic_num_alloc_irqs(d)));
     if ( !d->arch.vgic.allocated_irqs )
         return -ENOMEM;
 
@@ -195,9 +383,27 @@ void domain_vgic_free(struct domain *d)
         }
     }
 
+#ifdef CONFIG_GICV3_ESPI
+    for ( i = 0; i < d->arch.vgic.nr_espis; i++ )
+    {
+        struct pending_irq *p = spi_to_pending(d, ESPI_IDX2INTID(i));
+
+        if ( p->desc )
+        {
+            ret = release_guest_irq(d, p->irq);
+            if ( ret )
+                dprintk(XENLOG_G_WARNING, "d%u: Failed to release virq %u ret = %d\n",
+                        d->domain_id, p->irq, ret);
+        }
+    }
+#endif
+
     if ( d->arch.vgic.handler )
         d->arch.vgic.handler->domain_free(d);
     xfree(d->arch.vgic.shared_irqs);
+#ifdef CONFIG_GICV3_ESPI
+    xfree(d->arch.vgic.ext_shared_irqs);
+#endif
     xfree(d->arch.vgic.pending_irqs);
     xfree(d->arch.vgic.allocated_irqs);
 }
@@ -331,6 +537,8 @@ void arch_move_irqs(struct vcpu *v)
         if ( v_target == v && !test_bit(GIC_IRQ_GUEST_MIGRATING, &p->status) )
             irq_set_affinity(p->desc, cpu_mask);
     }
+
+    arch_move_espis(v);
 }
 
 void vgic_disable_irqs(struct vcpu *v, uint32_t r, unsigned int n)
@@ -538,6 +746,8 @@ struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq)
         n = &v->arch.vgic.pending_irqs[irq];
     else if ( is_lpi(irq) )
         n = v->domain->arch.vgic.handler->lpi_to_pending(v->domain, irq);
+    else if ( is_espi(irq) )
+        n = espi_to_pending(v->domain, irq);
     else
         n = &v->domain->arch.vgic.pending_irqs[irq - 32];
     return n;
@@ -546,6 +756,9 @@ struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq)
 struct pending_irq *spi_to_pending(struct domain *d, unsigned int irq)
 {
     ASSERT(irq >= NR_LOCAL_IRQS);
+
+    if ( is_espi(irq) )
+        return espi_to_pending(d, irq);
 
     return &d->arch.vgic.pending_irqs[irq - 32];
 }
@@ -668,6 +881,9 @@ bool vgic_reserve_virq(struct domain *d, unsigned int virq)
     if ( !vgic_is_valid_line(d, virq) )
         return false;
 
+    if ( is_espi(virq) )
+        return vgic_reserve_espi_virq(d, virq);
+
     return !test_and_set_bit(virq, d->arch.vgic.allocated_irqs);
 }
 
@@ -685,7 +901,7 @@ int vgic_allocate_virq(struct domain *d, bool spi)
     else
     {
         first = 32;
-        end = vgic_num_irqs(d);
+        end = vgic_num_alloc_irqs(d);
     }
 
     /*
