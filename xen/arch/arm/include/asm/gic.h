@@ -306,6 +306,15 @@ extern void gic_dump_vgic_info(struct vcpu *v);
 
 /* Number of interrupt lines */
 extern unsigned int gic_number_lines(void);
+static inline bool gic_is_valid_irq(unsigned int irq)
+{
+    return irq < gic_number_lines();
+}
+
+static inline bool gic_is_shared_irq(unsigned int irq)
+{
+    return (irq >= NR_LOCAL_IRQS && gic_is_valid_irq(irq));
+}
 
 /* IRQ translation function for the device tree */
 int gic_irq_xlate(const u32 *intspec, unsigned int intsize,
