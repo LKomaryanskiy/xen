@@ -285,19 +285,7 @@ void __init arch_create_domUs(struct dt_device_node *node,
     {
         int vpl011_virq = GUEST_VPL011_SPI;
 
-        d_cfg->arch.nr_spis = VGIC_DEF_NR_SPIS;
-#ifdef CONFIG_GICV3_ESPI
-        /*
-         * Check if the hardware supports extended SPIs (even if the
-         * appropriate config is set). If not, the common SPI range
-         * will be used. Otherwise overwrite the nr_spis with the maximum
-         * available INTID from eSPI range. In that case, the number of
-         * regular SPIs will be adjusted to the maximum value during vGIC
-         * initialization.
-         */
-        if ( gic_number_espis() > 0 )
-            d_cfg->arch.nr_spis = VGIC_DEF_MAX_SPI;
-#endif
+        d_cfg->arch.nr_spis = vgic_def_nr_spis();
 
         /*
          * The VPL011 virq is GUEST_VPL011_SPI, unless direct-map is
