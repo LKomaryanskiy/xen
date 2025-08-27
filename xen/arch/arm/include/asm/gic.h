@@ -313,7 +313,7 @@ static inline bool gic_is_valid_line(unsigned int irq)
 
 static inline bool gic_is_spi(unsigned int irq)
 {
-    return (irq >= NR_LOCAL_IRQS && gic_is_valid_line(irq));
+    return irq >= NR_LOCAL_IRQS && gic_is_valid_line(irq);
 }
 
 /* IRQ translation function for the device tree */
