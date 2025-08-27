@@ -339,7 +339,7 @@ extern bool vgic_is_valid_line(struct domain *d, unsigned int virq);
 
 static inline bool vgic_is_spi(struct domain *d, unsigned int virq)
 {
-    return (virq >= NR_LOCAL_IRQS && vgic_is_valid_line(d, virq));
+    return virq >= NR_LOCAL_IRQS && vgic_is_valid_line(d, virq);
 }
 
 /*
