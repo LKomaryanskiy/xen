@@ -149,6 +149,8 @@ struct vgic_dist {
 #ifdef CONFIG_GICV3_ESPI
     struct vgic_irq_rank *ext_shared_irqs;
     int nr_espis; /* Number of extended SPIs */
+    /* To simplify determining whether a domain is able to operate with eSPI */
+    bool has_espi;
 #endif
     /*
      * SPIs are domain global, SGIs and PPIs are per-VCPU and stored in

@@ -44,8 +44,8 @@ bool vgic_is_valid_line(struct domain *d, unsigned int virq)
  */
 static inline bool is_valid_espi_rank(struct domain *d, unsigned int rank)
 {
-    return ( rank >= EXT_RANK_MIN &&
-             EXT_RANK_NUM2IDX(rank) < DOMAIN_NR_EXT_RANKS(d) );
+    return rank >= EXT_RANK_MIN &&
+           EXT_RANK_NUM2IDX(rank) < DOMAIN_NR_EXT_RANKS(d);
 }
 
 static inline struct vgic_irq_rank *vgic_get_espi_rank(struct vcpu *v,
@@ -194,7 +194,7 @@ int domain_vgic_register(struct domain *d, unsigned int *mmio_count)
 
 #ifdef CONFIG_GICV3_ESPI
 /*
- * The function behaviur is the same as for regular SPIs (vgic_rank_offset),
+ * The function behavior is the same as for regular SPIs (vgic_rank_offset),
  * but it operates with extended SPI ranks.
  */
 struct vgic_irq_rank *vgic_ext_rank_offset(struct vcpu *v, unsigned int b,
@@ -224,10 +224,8 @@ static int init_vgic_espi(struct domain *d)
 
     for ( i = d->arch.vgic.nr_spis, idx = 0;
           i < vgic_num_spi_lines(d); i++, idx++ )
-    {
         vgic_init_pending_irq(&d->arch.vgic.pending_irqs[i],
                               ESPI_IDX2INTID(idx));
-    }
 
     for ( i = 0; i < DOMAIN_NR_EXT_RANKS(d); i++ )
         vgic_rank_init(&d->arch.vgic.ext_shared_irqs[i], i, 0);
@@ -284,10 +282,10 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
      * To compute the actual number of eSPI that will be usable for,
      * add back 32.
      */
-    if ( (nr_spis + 32) > ESPI_IDX2INTID(NR_ESPI_IRQS) )
+    if ( nr_spis + 32 > ESPI_IDX2INTID(NR_ESPI_IRQS) )
         return -EINVAL;
 
-    if ( (nr_spis + 32) >= ESPI_BASE_INTID )
+    if ( nr_spis + 32 >= ESPI_BASE_INTID )
     {
         d->arch.vgic.nr_espis = min(nr_spis - ESPI_BASE_INTID + 32, 1024U);
         /* Verify if GIC HW can handle provided INTID */
@@ -298,10 +296,13 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
          * SPI to pass the next check
          */
         nr_spis = VGIC_DEF_NR_SPIS;
-    } else
+        d->arch.vgic.has_espi = true;
+    }
+    else
     {
         /* Domain will use the regular SPI range */
         d->arch.vgic.nr_espis = 0;
+        d->arch.vgic.has_espi = false;
     }
 #endif
 
