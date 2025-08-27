@@ -57,6 +57,10 @@
 #define GICD_IPRIORITYRnEN           (0x23FC)
 #define GICD_ICFGRnE                 (0x3000)
 #define GICD_ICFGRnEN                (0x30FC)
+#define GICD_IGRPMODRnE              (0x3400)
+#define GICD_IGRPMODRnEN             (0x347C)
+#define GICD_NSACRnE                 (0x3600)
+#define GICD_NSACRnEN                (0x36FC)
 #define GICD_IROUTERnE               (0x8000)
 #define GICD_IROUTERnEN              (0x9FFC)
 

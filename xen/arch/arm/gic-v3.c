@@ -701,6 +701,8 @@ static void __init gicv3_dist_espi_common_init(uint32_t type)
     if ( gicv3_info.nr_espi == 0 )
         return;
 
+    printk("GICv3: %d eSPI lines\n", gicv3_info.nr_espi);
+
     for ( i = 0; i < espi_nr; i += 16 )
         writel_relaxed(0, GICD + GICD_ICFGRnE + (i / 16) * 4);
 

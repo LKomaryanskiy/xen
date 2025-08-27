@@ -320,6 +320,7 @@ static inline bool gic_is_valid_espi(unsigned int irq)
     return false;
 }
 #endif
+
 static inline bool gic_is_valid_line(unsigned int irq)
 {
     if ( gic_is_valid_espi(irq) )
