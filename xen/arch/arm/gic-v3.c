@@ -488,7 +488,7 @@ static void __iomem *get_addr_by_offset(struct irq_desc *irqd, u32 offset)
 #ifdef CONFIG_GICV3_ESPI
     case ESPI_BASE_INTID ... ESPI_MAX_INTID:
     {
-        u32 irq_index = ESPI_INTID2IDX(irqd->irq);
+        uint32_t irq_index = ESPI_INTID2IDX(irqd->irq);
 
         switch ( offset )
         {
@@ -703,6 +703,7 @@ static void __init gicv3_dist_espi_common_init(uint32_t type)
 
     printk("GICv3: %d eSPI lines\n", gicv3_info.nr_espi);
 
+    /* The configuration for eSPIs is similar to that for regular SPIs */
     for ( i = 0; i < espi_nr; i += 16 )
         writel_relaxed(0, GICD + GICD_ICFGRnE + (i / 16) * 4);
 
