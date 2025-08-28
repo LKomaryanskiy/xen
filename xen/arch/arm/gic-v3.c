@@ -490,7 +490,7 @@ static void __iomem *get_addr_by_offset(struct irq_desc *irqd, u32 offset)
     }
 
     /* Something went wrong, we shouldn't be able to reach here */
-    printk(XENLOG_WARNING "GICv3: WARNING: Invalid offset 0x%x for IRQ#%d",
+    printk(XENLOG_WARNING "GICv3: WARNING: Invalid offset 0x%x for IRQ#%u",
            offset, irqd->irq);
     ASSERT_UNREACHABLE();
 
