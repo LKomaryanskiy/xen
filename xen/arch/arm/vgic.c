@@ -193,18 +193,6 @@ int domain_vgic_register(struct domain *d, unsigned int *mmio_count)
 }
 
 #ifdef CONFIG_GICV3_ESPI
-/*
- * The function behavior is the same as for regular SPIs (vgic_rank_offset),
- * but it operates with extended SPI ranks.
- */
-struct vgic_irq_rank *vgic_ext_rank_offset(struct vcpu *v, unsigned int b,
-                                           unsigned int n, unsigned int s)
-{
-    unsigned int rank = REG_RANK_NR(b, (n >> s));
-
-    return vgic_get_rank(v, rank + EXT_RANK_MIN);
-}
-
 static unsigned int vgic_num_spi_lines(struct domain *d)
 {
     return d->arch.vgic.nr_spis + d->arch.vgic.nr_espis;
@@ -296,13 +284,11 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
          * SPI to pass the next check
          */
         nr_spis = VGIC_DEF_NR_SPIS;
-        d->arch.vgic.has_espi = true;
     }
     else
     {
         /* Domain will use the regular SPI range */
         d->arch.vgic.nr_espis = 0;
-        d->arch.vgic.has_espi = false;
     }
 #endif
 
@@ -383,8 +369,8 @@ void domain_vgic_free(struct domain *d)
         {
             ret = release_guest_irq(d, p->irq);
             if ( ret )
-                dprintk(XENLOG_G_WARNING, "d%u: Failed to release virq %u ret = %d\n",
-                        d->domain_id, p->irq, ret);
+                dprintk(XENLOG_G_WARNING, "%pd: Failed to release virq %u ret = %d\n",
+                        d, p->irq, ret);
         }
     }
 #endif

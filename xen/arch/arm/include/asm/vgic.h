@@ -149,8 +149,6 @@ struct vgic_dist {
 #ifdef CONFIG_GICV3_ESPI
     struct vgic_irq_rank *ext_shared_irqs;
     int nr_espis; /* Number of extended SPIs */
-    /* To simplify determining whether a domain is able to operate with eSPI */
-    bool has_espi;
 #endif
     /*
      * SPIs are domain global, SGIs and PPIs are per-VCPU and stored in
@@ -251,11 +249,11 @@ struct vgic_ops {
 
 #ifdef CONFIG_GICV3_ESPI
 #define DOMAIN_NR_EXT_RANKS(d) (((d)->arch.vgic.nr_espis+31)/32)
+#endif
 #define EXT_RANK_MIN (ESPI_BASE_INTID/32)
 #define EXT_RANK_MAX ((ESPI_MAX_INTID+31)/32)
 #define EXT_RANK_NUM2IDX(num) ((num)-EXT_RANK_MIN)
 #define EXT_RANK_IDX2NUM(idx) ((idx)+EXT_RANK_MIN)
-#endif
 
 #define vgic_lock(v)   spin_lock_irq(&(v)->domain->arch.vgic.lock)
 #define vgic_unlock(v) spin_unlock_irq(&(v)->domain->arch.vgic.lock)
@@ -316,12 +314,6 @@ extern struct vgic_irq_rank *vgic_rank_offset(struct vcpu *v,
                                               unsigned int b,
                                               unsigned int n,
                                               unsigned int s);
-#ifdef CONFIG_GICV3_ESPI
-extern struct vgic_irq_rank *vgic_ext_rank_offset(struct vcpu *v,
-                                                  unsigned int b,
-                                                  unsigned int n,
-                                                  unsigned int s);
-#endif
 extern struct vgic_irq_rank *vgic_rank_irq(struct vcpu *v, unsigned int irq);
 extern void vgic_disable_irqs(struct vcpu *v, uint32_t r, unsigned int n);
 extern void vgic_enable_irqs(struct vcpu *v, uint32_t r, unsigned int n);
