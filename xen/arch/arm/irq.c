@@ -51,6 +51,10 @@ void irq_end_none(struct irq_desc *irq)
 
 static irq_desc_t irq_desc[NR_IRQS - NR_LOCAL_IRQS];
 #ifdef CONFIG_GICV3_ESPI
+/*
+ * TODO: Consider allocating an array dynamically if
+ * there is a need to enable GICV3_ESPI by default.
+ */
 static irq_desc_t espi_desc[NR_ESPI_IRQS];
 
 static struct irq_desc *espi_to_desc(unsigned int irq)
@@ -60,7 +64,7 @@ static struct irq_desc *espi_to_desc(unsigned int irq)
 
 static int __init init_espi_data(void)
 {
-    int irq;
+    unsigned int irq;
 
     for ( irq = ESPI_BASE_INTID; irq <= ESPI_MAX_INTID; irq++ )
     {

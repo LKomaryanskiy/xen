@@ -32,14 +32,12 @@ struct arch_irq_desc {
 #define SPI_MAX_INTID   1019
 #define LPI_OFFSET      8192
 
-#ifdef CONFIG_GICV3_ESPI
 #define ESPI_BASE_INTID 4096
 #define ESPI_MAX_INTID  5119
 #define NR_ESPI_IRQS    1024
 
 #define ESPI_INTID2IDX(intid) ((intid) - ESPI_BASE_INTID)
 #define ESPI_IDX2INTID(idx)   ((idx) + ESPI_BASE_INTID)
-#endif
 
 /* LPIs are always numbered starting at 8192, so 0 is a good invalid case. */
 #define INVALID_LPI     0
