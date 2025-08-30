@@ -19,11 +19,9 @@
 #include <asm/gic.h>
 #include <asm/vgic.h>
 
-#ifdef CONFIG_GICV3_ESPI
-const unsigned int nr_irqs = ESPI_MAX_INTID + 1;
-#else
-const unsigned int nr_irqs = NR_IRQS;
-#endif
+const unsigned int nr_irqs = IS_ENABLED(CONFIG_GICV3_ESPI) ?
+                                        (ESPI_MAX_INTID + 1) :
+                                        NR_IRQS;
 
 static unsigned int local_irqs_type[NR_LOCAL_IRQS];
 static DEFINE_SPINLOCK(local_irqs_type_lock);
@@ -51,15 +49,12 @@ void irq_end_none(struct irq_desc *irq)
 
 static irq_desc_t irq_desc[NR_IRQS - NR_LOCAL_IRQS];
 #ifdef CONFIG_GICV3_ESPI
-/*
- * TODO: Consider allocating an array dynamically if
- * there is a need to enable GICV3_ESPI by default.
- */
+/* TODO: Consider allocating an array dynamically */
 static irq_desc_t espi_desc[NR_ESPI_IRQS];
 
 static struct irq_desc *espi_to_desc(unsigned int irq)
 {
-    return &espi_desc[ESPI_INTID2IDX(irq)];
+    return &espi_desc[espi_intid_to_idx(irq)];
 }
 
 static int __init init_espi_data(void)
@@ -82,14 +77,14 @@ static int __init init_espi_data(void)
 }
 #else
 /*
- * This function is stub and will not be called if CONFIG_GICV3_ESPI=n,
- * because in this case, is_espi will always return false.
+ * Defined as a prototype as it should not be called if CONFIG_GICV3_ESPI=n.
+ * Without CONFIG_GICV3_ESPI, the additional 1024 IRQ descriptors will not
+ * be defined, and thus, they cannot be used. Unless INTIDs from the eSPI
+ * range are mistakenly defined in Xen DTS when the appropriate config is
+ * disabled, this function will not be reached because is_espi will return
+ * false for non-eSPI INTIDs.
  */
-static struct irq_desc *espi_to_desc(unsigned int irq)
-{
-    ASSERT_UNREACHABLE();
-    return NULL;
-}
+struct irq_desc *espi_to_desc(unsigned int irq);
 
 static int __init init_espi_data(void)
 {

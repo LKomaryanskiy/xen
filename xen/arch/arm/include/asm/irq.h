@@ -36,9 +36,6 @@ struct arch_irq_desc {
 #define ESPI_MAX_INTID  5119
 #define NR_ESPI_IRQS    1024
 
-#define ESPI_INTID2IDX(intid) ((intid) - ESPI_BASE_INTID)
-#define ESPI_IDX2INTID(idx)   ((idx) + ESPI_BASE_INTID)
-
 /* LPIs are always numbered starting at 8192, so 0 is a good invalid case. */
 #define INVALID_LPI     0
 
@@ -47,10 +44,7 @@ struct arch_irq_desc {
 
 extern const unsigned int nr_irqs;
 #ifdef CONFIG_GICV3_ESPI
-/*
- * This will also cover the eSPI range, as some critical devices
- * for booting Xen (e.g., serial) may use this type of interrupts.
- */
+/* This will cover the eSPI range, to allow asignmant of eSPIs to domains. */
 #define nr_static_irqs (ESPI_MAX_INTID + 1)
 #else
 #define nr_static_irqs NR_IRQS
@@ -70,11 +64,30 @@ static inline bool is_lpi(unsigned int irq)
     return irq >= LPI_OFFSET;
 }
 
+static inline unsigned int espi_intid_to_idx(unsigned int intid)
+{
+    ASSERT(intid >= ESPI_BASE_INTID && intid <= ESPI_MAX_INTID);
+    return intid - ESPI_BASE_INTID;
+}
+
+static inline unsigned int espi_idx_to_intid(unsigned int idx)
+{
+    ASSERT(idx <= NR_ESPI_IRQS);
+    return idx + ESPI_BASE_INTID;
+}
+
 static inline bool is_espi(unsigned int irq)
 {
 #ifdef CONFIG_GICV3_ESPI
-    return (irq >= ESPI_BASE_INTID && irq <= ESPI_MAX_INTID);
+    return irq >= ESPI_BASE_INTID && irq <= ESPI_MAX_INTID;
 #else
+    /*
+     * The function should not be called for eSPIs when CONFIG_GICV3_ESPI is
+     * disabled. Returning false allows the compiler to optimize the code
+     * when the config is disabled, while the assert ensures that out-of-range
+     * array resources are not accessed, e.g., in __irq_to_desc().
+     */
+    ASSERT(irq >= ESPI_BASE_INTID);
     return false;
 #endif
 }
