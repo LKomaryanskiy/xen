@@ -148,7 +148,7 @@ struct vgic_dist {
     struct vgic_irq_rank *shared_irqs;
 #ifdef CONFIG_GICV3_ESPI
     struct vgic_irq_rank *ext_shared_irqs;
-    int nr_espis; /* Number of extended SPIs */
+    unsigned int nr_espis; /* Number of extended SPIs */
 #endif
     /*
      * SPIs are domain global, SGIs and PPIs are per-VCPU and stored in
@@ -248,12 +248,12 @@ struct vgic_ops {
 #define DOMAIN_NR_RANKS(d) (((d)->arch.vgic.nr_spis+31)/32)
 
 #ifdef CONFIG_GICV3_ESPI
-#define DOMAIN_NR_EXT_RANKS(d) (((d)->arch.vgic.nr_espis+31)/32)
+#define DOMAIN_NR_EXT_RANKS(d) (((d)->arch.vgic.nr_espis + 31) / 32)
 #endif
-#define EXT_RANK_MIN (ESPI_BASE_INTID/32)
-#define EXT_RANK_MAX ((ESPI_MAX_INTID+31)/32)
-#define EXT_RANK_NUM2IDX(num) ((num)-EXT_RANK_MIN)
-#define EXT_RANK_IDX2NUM(idx) ((idx)+EXT_RANK_MIN)
+#define EXT_RANK_MIN (ESPI_BASE_INTID / 32)
+#define EXT_RANK_MAX ((ESPI_MAX_INTID + 31) / 32)
+#define EXT_RANK_NUM2IDX(num) ((num) - EXT_RANK_MIN)
+#define EXT_RANK_IDX2NUM(idx) ((idx) + EXT_RANK_MIN)
 
 #define vgic_lock(v)   spin_lock_irq(&(v)->domain->arch.vgic.lock)
 #define vgic_unlock(v) spin_unlock_irq(&(v)->domain->arch.vgic.lock)
