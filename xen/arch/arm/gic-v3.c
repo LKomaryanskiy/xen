@@ -445,7 +445,7 @@ static void gicv3_dump_state(const struct vcpu *v)
     }
 }
 
-static void __iomem *get_addr_by_offset(struct irq_desc *irqd, u32 offset)
+static void __iomem *get_addr_by_offset(struct irq_desc *irqd, uint32_t offset)
 {
     switch ( irqd->irq )
     {
