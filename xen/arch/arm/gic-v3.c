@@ -488,7 +488,7 @@ static void __iomem *get_addr_by_offset(struct irq_desc *irqd, uint32_t offset)
 #ifdef CONFIG_GICV3_ESPI
     case ESPI_BASE_INTID ... ESPI_MAX_INTID:
     {
-        uint32_t irq_index = ESPI_INTID2IDX(irqd->irq);
+        uint32_t irq_index = espi_intid_to_idx(irqd->irq);
 
         switch ( offset )
         {

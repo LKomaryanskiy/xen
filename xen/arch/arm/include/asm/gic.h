@@ -311,8 +311,8 @@ extern unsigned int gic_number_espis(void);
 
 static inline bool gic_is_valid_espi(unsigned int irq)
 {
-    return (irq >= ESPI_BASE_INTID &&
-            irq < ESPI_IDX2INTID(gic_number_espis()));
+    return irq >= ESPI_BASE_INTID &&
+           irq < espi_idx_to_intid(gic_number_espis());
 }
 #else
 static inline bool gic_is_valid_espi(unsigned int irq)
@@ -323,10 +323,7 @@ static inline bool gic_is_valid_espi(unsigned int irq)
 
 static inline bool gic_is_valid_line(unsigned int irq)
 {
-    if ( gic_is_valid_espi(irq) )
-        return true;
-
-    return irq < gic_number_lines();
+    return irq < gic_number_lines() || gic_is_valid_espi(irq);
 }
 
 static inline bool gic_is_spi(unsigned int irq)
