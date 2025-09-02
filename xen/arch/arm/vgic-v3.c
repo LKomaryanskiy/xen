@@ -107,8 +107,6 @@ static uint64_t vgic_fetch_irouter(struct vgic_irq_rank *rank,
 /*
  * Store an IROUTER register in a convenient way and migrate the vIRQ
  * if necessary. This function only deals with IROUTER32 and onwards.
- *
- * Note the offset will be aligned to the appropriate boundary.
  */
 static void vgic_store_irouter(struct domain *d, struct vgic_irq_rank *rank,
                                unsigned int virq, uint64_t irouter)
@@ -670,6 +668,34 @@ write_reserved:
     return 1;
 }
 
+/*
+ * Since all eSPI counterparts of SPI registers belong to lower offsets,
+ * we can check whether the register offset is less than espi_base and,
+ * if so, return the rank for regular SPI. Otherwise, return the rank
+ * for eSPI.
+ */
+static inline struct vgic_irq_rank *vgic_get_rank(struct vcpu *v,
+                                                  unsigned int b,
+                                                  uint32_t reg,
+                                                  unsigned int s,
+                                                  uint32_t spi_base,
+                                                  uint32_t espi_base)
+{
+    if ( reg < espi_base )
+        return vgic_rank_offset(v, b, reg - spi_base, s);
+    else
+        return vgic_ext_rank_offset(v, b, reg - espi_base, s);
+}
+
+static inline uint32_t vgic_get_reg_offset(uint32_t reg, uint32_t spi_base,
+                                           uint32_t espi_base)
+{
+    if ( reg < espi_base )
+        return reg - spi_base;
+    else
+        return reg - espi_base;
+}
+
 static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
                                             mmio_info_t *info, uint32_t reg,
                                             register_t *r)
@@ -691,11 +717,8 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
     case VRANGE32(GICD_ISENABLER, GICD_ISENABLERN):
     case VRANGE32(GICD_ISENABLERnE, GICD_ISENABLERnEN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_ISENABLERnE )
-            rank = vgic_ext_rank_offset(v, 1, reg - GICD_ISENABLERnE,
-                                        DABT_WORD);
-        else
-            rank = vgic_rank_offset(v, 1, reg - GICD_ISENABLER, DABT_WORD);
+        rank = vgic_get_rank(v, 1, reg, DABT_WORD, GICD_ISENABLER,
+                             GICD_ISENABLERnE);
         if ( rank == NULL ) goto read_as_zero;
         vgic_lock_rank(v, rank, flags);
         *r = vreg_reg32_extract(rank->ienable, info);
@@ -705,11 +728,8 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
     case VRANGE32(GICD_ICENABLER, GICD_ICENABLERN):
     case VRANGE32(GICD_ICENABLERnE, GICD_ICENABLERnEN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_ICENABLERnE )
-            rank = vgic_ext_rank_offset(v, 1, reg - GICD_ICENABLERnE,
-                                        DABT_WORD);
-        else
-            rank = vgic_rank_offset(v, 1, reg - GICD_ICENABLER, DABT_WORD);
+        rank = vgic_get_rank(v, 1, reg, DABT_WORD, GICD_ICENABLER,
+                             GICD_ICENABLERnE);
         if ( rank == NULL ) goto read_as_zero;
         vgic_lock_rank(v, rank, flags);
         *r = vreg_reg32_extract(rank->ienable, info);
@@ -733,17 +753,15 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
     case VRANGE32(GICD_IPRIORITYR, GICD_IPRIORITYRN):
     case VRANGE32(GICD_IPRIORITYRnE, GICD_IPRIORITYRnEN):
     {
-        uint32_t ipriorityr;
+        uint32_t ipriorityr, offset;
         uint8_t rank_index;
 
         if ( dabt.size != DABT_BYTE && dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_IPRIORITYRnE )
-            rank = vgic_ext_rank_offset(v, 8, reg - GICD_IPRIORITYRnE,
-                                        DABT_WORD);
-        else
-            rank = vgic_rank_offset(v, 8, reg - GICD_IPRIORITYR, DABT_WORD);
+        rank = vgic_get_rank(v, 8, reg, DABT_WORD, GICD_IPRIORITYR,
+                             GICD_IPRIORITYRnE);
         if ( rank == NULL ) goto read_as_zero;
-        rank_index = REG_RANK_INDEX(8, reg - GICD_IPRIORITYR, DABT_WORD);
+        offset = vgic_get_reg_offset(reg, GICD_IPRIORITYR, GICD_IPRIORITYRnE);
+        rank_index = REG_RANK_INDEX(8, offset, DABT_WORD);
 
         vgic_lock_rank(v, rank, flags);
         ipriorityr = ACCESS_ONCE(rank->ipriorityr[rank_index]);
@@ -757,16 +775,14 @@ static int __vgic_v3_distr_common_mmio_read(const char *name, struct vcpu *v,
     case VRANGE32(GICD_ICFGR, GICD_ICFGRN):
     case VRANGE32(GICD_ICFGRnE, GICD_ICFGRnEN):
     {
-        uint32_t icfgr;
+        uint32_t icfgr, offset;
 
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_ICFGRnE )
-            rank = vgic_ext_rank_offset(v, 2, reg - GICD_ICFGRnE, DABT_WORD);
-        else
-            rank = vgic_rank_offset(v, 2, reg - GICD_ICFGR, DABT_WORD);
+        rank = vgic_get_rank(v, 2, reg, DABT_WORD, GICD_ICFGR, GICD_ICFGRnE);
         if ( rank == NULL ) goto read_as_zero;
+        offset = vgic_get_reg_offset(reg, GICD_ICFGR, GICD_ICFGRnE);
         vgic_lock_rank(v, rank, flags);
-        icfgr = rank->icfg[REG_RANK_INDEX(2, reg - GICD_ICFGR, DABT_WORD)];
+        icfgr = rank->icfg[REG_RANK_INDEX(2, offset, DABT_WORD)];
         vgic_unlock_rank(v, rank, flags);
 
         *r = vreg_reg32_extract(icfgr, info);
@@ -812,101 +828,74 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
     case VRANGE32(GICD_ISENABLER, GICD_ISENABLERN):
     case VRANGE32(GICD_ISENABLERnE, GICD_ISENABLERnEN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_ISENABLERnE )
-            rank = vgic_ext_rank_offset(v, 1, reg - GICD_ISENABLERnE,
-                                        DABT_WORD);
-        else
-            rank = vgic_rank_offset(v, 1, reg - GICD_ISENABLER, DABT_WORD);
+        rank = vgic_get_rank(v, 1, reg, DABT_WORD, GICD_ISENABLER,
+                             GICD_ISENABLERnE);
         if ( rank == NULL ) goto write_ignore;
         vgic_lock_rank(v, rank, flags);
         tr = rank->ienable;
         vreg_reg32_setbits(&rank->ienable, r, info);
-        if ( reg >= GICD_ISENABLERnE )
-            vgic_enable_irqs(v, (rank->ienable) & (~tr),
-                             EXT_RANK_IDX2NUM(rank->index));
-        else
-            vgic_enable_irqs(v, (rank->ienable) & (~tr), rank->index);
+        vgic_enable_irqs(v, (rank->ienable) & (~tr), rank->index);
         vgic_unlock_rank(v, rank, flags);
         return 1;
 
     case VRANGE32(GICD_ICENABLER, GICD_ICENABLERN):
     case VRANGE32(GICD_ICENABLERnE, GICD_ICENABLERnEN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_ICENABLERnE )
-            rank = vgic_ext_rank_offset(v, 1, reg - GICD_ICENABLERnE,
-                                        DABT_WORD);
-        else
-            rank = vgic_rank_offset(v, 1, reg - GICD_ICENABLER, DABT_WORD);
+        rank = vgic_get_rank(v, 1, reg, DABT_WORD, GICD_ICENABLER,
+                             GICD_ICENABLERnE);
         if ( rank == NULL ) goto write_ignore;
         vgic_lock_rank(v, rank, flags);
         tr = rank->ienable;
         vreg_reg32_clearbits(&rank->ienable, r, info);
-        if ( reg >= GICD_ICENABLERnE )
-            vgic_disable_irqs(v, (~rank->ienable) & tr,
-                              EXT_RANK_IDX2NUM(rank->index));
-        else
-            vgic_disable_irqs(v, (~rank->ienable) & tr, rank->index);
+        vgic_disable_irqs(v, (~rank->ienable) & tr, rank->index);
         vgic_unlock_rank(v, rank, flags);
         return 1;
 
     case VRANGE32(GICD_ISPENDR, GICD_ISPENDRN):
     case VRANGE32(GICD_ISPENDRnE, GICD_ISPENDRnEN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_ISPENDRnE )
-            rank = vgic_ext_rank_offset(v, 1, reg - GICD_ISPENDRnE, DABT_WORD);
-        else
-            rank = vgic_rank_offset(v, 1, reg - GICD_ISPENDR, DABT_WORD);
+        rank = vgic_get_rank(v, 1, reg, DABT_WORD, GICD_ISPENDR,
+                             GICD_ISPENDRnE);
         if ( rank == NULL ) goto write_ignore;
 
-        if ( reg >= GICD_ISPENDRnE )
-            vgic_set_irqs_pending(v, r, EXT_RANK_IDX2NUM(rank->index));
-        else
-            vgic_set_irqs_pending(v, r, rank->index);
+        vgic_set_irqs_pending(v, r, rank->index);
 
         return 1;
 
     case VRANGE32(GICD_ICPENDR, GICD_ICPENDRN):
     case VRANGE32(GICD_ICPENDRnE, GICD_ICPENDRnEN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_ICPENDRnE )
-            rank = vgic_ext_rank_offset(v, 1, reg - GICD_ICPENDRnE, DABT_WORD);
-        else
-            rank = vgic_rank_offset(v, 1, reg - GICD_ICPENDR, DABT_WORD);
+        rank = vgic_get_rank(v, 1, reg, DABT_WORD, GICD_ICPENDR,
+                             GICD_ICPENDRnE);
         if ( rank == NULL ) goto write_ignore;
 
-        if ( reg >= GICD_ICPENDRnE )
-            vgic_check_inflight_irqs_pending(v,
-                                             EXT_RANK_IDX2NUM(rank->index), r);
-        else
-            vgic_check_inflight_irqs_pending(v, rank->index, r);
+        vgic_check_inflight_irqs_pending(v, rank->index, r);
 
         goto write_ignore;
 
     case VRANGE32(GICD_ISACTIVER, GICD_ISACTIVERN):
+    case VRANGE32(GICD_ISACTIVERnE, GICD_ISACTIVERnEN):
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        printk(XENLOG_G_ERR
-               "%pv: %s: unhandled word write %#"PRIregister" to ISACTIVER%d\n",
-               v, name, r, reg - GICD_ISACTIVER);
+        if ( reg < GICD_ISACTIVERnE )
+            printk(XENLOG_G_ERR
+                   "%pv: %s: unhandled word write %#"PRIregister" to ISACTIVER%d\n",
+                   v, name, r, reg - GICD_ISACTIVER);
+        else
+            printk(XENLOG_G_ERR
+                   "%pv: %s: unhandled word write %#"PRIregister" to ISACTIVER%dE\n",
+                   v, name, r, reg - GICD_ISACTIVERnE);
         return 0;
 
     case VRANGE32(GICD_ICACTIVER, GICD_ICACTIVERN):
-        printk(XENLOG_G_ERR
-               "%pv: %s: unhandled word write %#"PRIregister" to ICACTIVER%d\n",
-               v, name, r, reg - GICD_ICACTIVER);
-        goto write_ignore_32;
-
-    case VRANGE32(GICD_ISACTIVERnE, GICD_ISACTIVERnEN):
-        if ( dabt.size != DABT_WORD )
-            goto bad_width;
-        printk(XENLOG_G_ERR
-               "%pv: %s: unhandled word write %#"PRIregister" to ISACTIVER%dE\n",
-               v, name, r, reg - GICD_ISACTIVERnE);
-        return 0;
-
     case VRANGE32(GICD_ICACTIVERnE, GICD_ICACTIVERnEN):
-        printk(XENLOG_G_ERR
-               "%pv: %s: unhandled word write %#"PRIregister" to ICACTIVER%dE\n",
-               v, name, r, reg - GICD_ICACTIVERnE);
+        if ( reg < GICD_ICACTIVERnE )
+            printk(XENLOG_G_ERR
+                   "%pv: %s: unhandled word write %#"PRIregister" to ICACTIVER%d\n",
+                   v, name, r, reg - GICD_ICACTIVER);
+        else
+            printk(XENLOG_G_ERR
+                   "%pv: %s: unhandled word write %#"PRIregister" to ICACTIVER%dE\n",
+                   v, name, r, reg - GICD_ICACTIVERnE);
         goto write_ignore_32;
 
     case VRANGE32(GICD_IPRIORITYR, GICD_IPRIORITYRN):
@@ -915,16 +904,10 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
         uint32_t *ipriorityr, priority, offset;
 
         if ( dabt.size != DABT_BYTE && dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_IPRIORITYRnE ) {
-            offset = reg - GICD_IPRIORITYRnE;
-            rank = vgic_ext_rank_offset(v, 8, offset, DABT_WORD);
-        }
-        else
-        {
-            offset = reg - GICD_IPRIORITYR;
-            rank = vgic_rank_offset(v, 8, offset, DABT_WORD);
-        }
+        rank = vgic_get_rank(v, 8, reg, DABT_WORD, GICD_IPRIORITYR,
+                             GICD_IPRIORITYRnE);
         if ( rank == NULL ) goto write_ignore;
+        offset = vgic_get_reg_offset(reg, GICD_IPRIORITYR, GICD_IPRIORITYRnE);
         vgic_lock_rank(v, rank, flags);
         ipriorityr = &rank->ipriorityr[REG_RANK_INDEX(8, offset, DABT_WORD)];
         priority = ACCESS_ONCE(*ipriorityr);
@@ -939,20 +922,21 @@ static int __vgic_v3_distr_common_mmio_write(const char *name, struct vcpu *v,
 
     case VRANGE32(GICD_ICFGR + 4, GICD_ICFGRN): /* PPI + SPIs */
     case VRANGE32(GICD_ICFGRnE, GICD_ICFGRnEN):
+    {
+        uint32_t offset;
+
         /* ICFGR1 for PPI's, which is implementation defined
            if ICFGR1 is programmable or not. We chose to program */
         if ( dabt.size != DABT_WORD ) goto bad_width;
-        if ( reg >= GICD_ICFGRnE )
-            rank = vgic_ext_rank_offset(v, 2, reg - GICD_ICFGRnE, DABT_WORD);
-        else
-            rank = vgic_rank_offset(v, 2, reg - GICD_ICFGR, DABT_WORD);
+        rank = vgic_get_rank(v, 2, reg, DABT_WORD, GICD_ICFGR, GICD_ICFGRnE);
         if ( rank == NULL ) goto write_ignore;
+        offset = vgic_get_reg_offset(reg, GICD_ICFGR, GICD_ICFGRnE);
         vgic_lock_rank(v, rank, flags);
-        vreg_reg32_update(&rank->icfg[REG_RANK_INDEX(2, reg - GICD_ICFGR,
-                                                     DABT_WORD)],
+        vreg_reg32_update(&rank->icfg[REG_RANK_INDEX(2, offset, DABT_WORD)],
                           r, info);
         vgic_unlock_rank(v, rank, flags);
         return 1;
+    }
 
     default:
         printk(XENLOG_G_ERR
@@ -1327,17 +1311,15 @@ static int vgic_v3_distr_mmio_read(struct vcpu *v, mmio_info_t *info,
     case VRANGE64(GICD_IROUTERnE, GICD_IROUTERnEN):
     {
         uint64_t irouter;
+        uint32_t offset;
 
         if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
-        if ( gicd_reg >= GICD_IROUTERnE )
-            rank = vgic_ext_rank_offset(v, 64, gicd_reg - GICD_IROUTERnE,
-                                        DABT_DOUBLE_WORD);
-        else
-            rank = vgic_rank_offset(v, 64, gicd_reg - GICD_IROUTER,
-                                    DABT_DOUBLE_WORD);
+        rank = vgic_get_rank(v, 64, gicd_reg, DABT_DOUBLE_WORD, GICD_IROUTER,
+                             GICD_IROUTERnE);
         if ( rank == NULL ) goto read_as_zero;
+        offset = vgic_get_reg_offset(gicd_reg, GICD_IROUTER, GICD_IROUTERnE);
         vgic_lock_rank(v, rank, flags);
-        irouter = vgic_fetch_irouter(rank, gicd_reg - GICD_IROUTER);
+        irouter = vgic_fetch_irouter(rank, offset);
         vgic_unlock_rank(v, rank, flags);
 
         *r = vreg_reg64_extract(irouter, info);
@@ -1535,21 +1517,17 @@ static int vgic_v3_distr_mmio_write(struct vcpu *v, mmio_info_t *info,
         unsigned int offset, virq;
 
         if ( !vgic_reg64_check_access(dabt) ) goto bad_width;
-        if ( gicd_reg >= GICD_IROUTERnE ) {
-            offset = gicd_reg - GICD_IROUTERnE;
-            rank = vgic_ext_rank_offset(v, 64, offset, DABT_DOUBLE_WORD);
-        } else {
-            offset = gicd_reg - GICD_IROUTER;
-            rank = vgic_rank_offset(v, 64, offset, DABT_DOUBLE_WORD);
-        }
+        rank = vgic_get_rank(v, 64, gicd_reg, DABT_DOUBLE_WORD, GICD_IROUTER,
+                             GICD_IROUTERnE);
         if ( rank == NULL ) goto write_ignore;
+        offset = vgic_get_reg_offset(gicd_reg, GICD_IROUTER, GICD_IROUTERnE);
         vgic_lock_rank(v, rank, flags);
         irouter = vgic_fetch_irouter(rank, offset);
         vreg_reg64_update(&irouter, r, info);
-        if ( gicd_reg >= GICD_IROUTERnE )
-            virq = ESPI_IDX2INTID(offset / NR_BYTES_PER_IROUTER);
-        else
+        if ( gicd_reg < GICD_IROUTERnE )
             virq = offset / NR_BYTES_PER_IROUTER;
+        else
+            virq = espi_idx_to_intid(offset / NR_BYTES_PER_IROUTER);
         vgic_store_irouter(v->domain, rank, virq, irouter);
         vgic_unlock_rank(v, rank, flags);
         return 1;
