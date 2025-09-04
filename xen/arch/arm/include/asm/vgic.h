@@ -144,7 +144,14 @@ struct vgic_dist {
     spinlock_t lock;
     uint32_t ctlr;
     int nr_spis; /* Number of SPIs */
-    unsigned long *allocated_irqs; /* bitmap of IRQs allocated */
+    /*
+     * Bitmap of allocated IRQs with the following index mapping:
+     * Local IRQs [0..31]
+     * Regular SPIs [32..nr_spis + 31]
+     * Optional, if supported:
+     * Extended SPIs [nr_spis + 32..nr_spis + nr_espis + 31]
+     */
+    unsigned long *allocated_irqs;
     struct vgic_irq_rank *shared_irqs;
 #ifdef CONFIG_GICV3_ESPI
     struct vgic_irq_rank *ext_shared_irqs;
@@ -152,7 +159,10 @@ struct vgic_dist {
 #endif
     /*
      * SPIs are domain global, SGIs and PPIs are per-VCPU and stored in
-     * struct arch_vcpu.
+     * struct arch_vcpu. The index mapping is as follows:
+     * Regular SPIs [0..nr_spis - 1]
+     * Optional, if supported:
+     * eSPIs [nr_spis..nr_spis + nr_espis - 1]
      */
     struct pending_irq *pending_irqs;
     /* Base address for guest GIC */

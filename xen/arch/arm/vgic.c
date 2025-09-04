@@ -242,9 +242,9 @@ int domain_vgic_init(struct domain *d, unsigned int nr_spis)
          * specifies the maximum INTID, which is defined in the domain
          * config subtracted by 32 to cover the local IRQs (please see
          * the comment to VGIC_DEF_NR_SPIS). To compute the actual number
-         * of eSPI that will be usable for, add back 32.
+         * of eSPI that will be usable for, add back 32 (NR_LOCAL_IRQS).
          */
-        nr_spis += 32;
+        nr_spis += NR_LOCAL_IRQS;
         if ( nr_spis > espi_idx_to_intid(NR_ESPI_IRQS) )
             return -EINVAL;
 
@@ -318,7 +318,7 @@ void domain_vgic_free(struct domain *d)
     int i;
     int ret;
 
-    for ( i = 32; i < vgic_num_alloc_irqs(d); i++ )
+    for ( i = NR_LOCAL_IRQS; i < vgic_num_alloc_irqs(d); i++ )
     {
         struct pending_irq *p;
         unsigned int virq = idx_to_virq(d, i);
@@ -465,7 +465,7 @@ void arch_move_irqs(struct vcpu *v)
      */
     ASSERT(!is_lpi(vgic_num_irqs(d) - 1));
 
-    for ( i = 32; i < vgic_num_alloc_irqs(d); i++ )
+    for ( i = NR_LOCAL_IRQS; i < vgic_num_alloc_irqs(d); i++ )
     {
         unsigned int virq = idx_to_virq(d, i);
 
@@ -689,14 +689,16 @@ struct pending_irq *irq_to_pending(struct vcpu *v, unsigned int irq)
 
 struct pending_irq *spi_to_pending(struct domain *d, unsigned int irq)
 {
+    unsigned int idx;
+
     ASSERT(irq >= NR_LOCAL_IRQS);
 
     if ( is_espi(irq) )
-        irq = espi_intid_to_idx(irq) + d->arch.vgic.nr_spis;
+        idx = espi_intid_to_idx(irq) + d->arch.vgic.nr_spis;
     else
-        irq -= 32;
+        idx = irq - NR_LOCAL_IRQS;
 
-    return &d->arch.vgic.pending_irqs[irq];
+    return &d->arch.vgic.pending_irqs[idx];
 }
 
 void vgic_clear_pending_irqs(struct vcpu *v)
@@ -814,13 +816,15 @@ bool vgic_emulate(struct cpu_user_regs *regs, union hsr hsr)
 
 bool vgic_reserve_virq(struct domain *d, unsigned int virq)
 {
+    unsigned int idx = virq;
+
     if ( !vgic_is_valid_line(d, virq) )
         return false;
 
     if ( is_espi(virq) )
-        virq = espi_intid_to_idx(virq) + vgic_num_irqs(d);
+        idx = espi_intid_to_idx(virq) + vgic_num_irqs(d);
 
-    return !test_and_set_bit(virq, d->arch.vgic.allocated_irqs);
+    return !test_and_set_bit(idx, d->arch.vgic.allocated_irqs);
 }
 
 int vgic_allocate_virq(struct domain *d, bool spi)
