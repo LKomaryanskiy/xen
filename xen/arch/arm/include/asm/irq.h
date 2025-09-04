@@ -64,18 +64,6 @@ static inline bool is_lpi(unsigned int irq)
     return irq >= LPI_OFFSET;
 }
 
-static inline unsigned int espi_intid_to_idx(unsigned int intid)
-{
-    ASSERT(intid >= ESPI_BASE_INTID && intid <= ESPI_MAX_INTID);
-    return intid - ESPI_BASE_INTID;
-}
-
-static inline unsigned int espi_idx_to_intid(unsigned int idx)
-{
-    ASSERT(idx <= NR_ESPI_IRQS);
-    return idx + ESPI_BASE_INTID;
-}
-
 static inline bool is_espi(unsigned int irq)
 {
 #ifdef CONFIG_GICV3_ESPI
@@ -87,9 +75,21 @@ static inline bool is_espi(unsigned int irq)
      * when the config is disabled, while the assert ensures that out-of-range
      * array resources are not accessed, e.g., in __irq_to_desc().
      */
-    ASSERT(irq >= ESPI_BASE_INTID);
+    ASSERT(!(irq >= ESPI_BASE_INTID && irq <= ESPI_MAX_INTID));
     return false;
 #endif
+}
+
+static inline unsigned int espi_intid_to_idx(unsigned int intid)
+{
+    ASSERT(is_espi(intid));
+    return intid - ESPI_BASE_INTID;
+}
+
+static inline unsigned int espi_idx_to_intid(unsigned int idx)
+{
+    ASSERT(idx <= NR_ESPI_IRQS);
+    return idx + ESPI_BASE_INTID;
 }
 
 #define domain_pirq_to_irq(d, pirq) (pirq)
