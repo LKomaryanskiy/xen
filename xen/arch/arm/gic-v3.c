@@ -466,6 +466,7 @@ static void __iomem *get_addr_by_offset(struct irq_desc *irqd, uint32_t offset)
         default:
             break;
         }
+        break;
     case NR_GIC_LOCAL_IRQS ... SPI_MAX_INTID:
         switch ( offset )
         {
@@ -485,6 +486,7 @@ static void __iomem *get_addr_by_offset(struct irq_desc *irqd, uint32_t offset)
         default:
             break;
         }
+        break;
 #ifdef CONFIG_GICV3_ESPI
     case ESPI_BASE_INTID ... ESPI_MAX_INTID:
     {
@@ -513,6 +515,7 @@ static void __iomem *get_addr_by_offset(struct irq_desc *irqd, uint32_t offset)
         default:
             break;
         }
+        break;
     }
 #endif
     default:
