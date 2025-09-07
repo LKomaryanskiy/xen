@@ -515,8 +515,10 @@ static void __iomem *get_addr_by_offset(struct irq_desc *irqd, uint32_t offset)
         case GICD_IPRIORITYR:
             return (GICD + GICD_IPRIORITYRnE + irq_index);
         default:
+            /* Invalid register offset for eSPIs */
             break;
         }
+        break;
     }
 #endif
     default:
@@ -707,7 +709,7 @@ static void __init gicv3_dist_espi_common_init(uint32_t type)
     if ( gicv3_info.nr_espi == 0 )
         return;
 
-    printk("GICv3: %d eSPI lines\n", gicv3_info.nr_espi);
+    printk("GICv3: %u eSPI lines\n", gicv3_info.nr_espi);
 
     /* The configuration for eSPIs is similar to that for regular SPIs */
     for ( i = 0; i < espi_nr; i += 16 )
