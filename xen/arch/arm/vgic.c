@@ -694,9 +694,15 @@ struct pending_irq *spi_to_pending(struct domain *d, unsigned int irq)
     ASSERT(irq >= NR_LOCAL_IRQS);
 
     if ( is_espi(irq) )
-        idx = espi_intid_to_idx(irq) + d->arch.vgic.nr_spis;
+    {
+        unsigned int nr_spis = d->arch.vgic.nr_spis;
+
+        idx = espi_intid_to_idx(irq) + nr_spis;
+    }
     else
+    {
         idx = irq - NR_LOCAL_IRQS;
+    }
 
     return &d->arch.vgic.pending_irqs[idx];
 }
@@ -822,7 +828,11 @@ bool vgic_reserve_virq(struct domain *d, unsigned int virq)
         return false;
 
     if ( is_espi(virq) )
-        idx = espi_intid_to_idx(virq) + vgic_num_irqs(d);
+    {
+        unsigned int num_regular_irqs = vgic_num_irqs(d);
+
+        idx = espi_intid_to_idx(virq) + num_regular_irqs;
+    }
 
     return !test_and_set_bit(idx, d->arch.vgic.allocated_irqs);
 }
