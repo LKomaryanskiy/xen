@@ -44,7 +44,7 @@ struct arch_irq_desc {
 
 extern const unsigned int nr_irqs;
 #ifdef CONFIG_GICV3_ESPI
-/* This will cover the eSPI range, to allow asignmant of eSPIs to domains. */
+/* This will cover the eSPI range, to allow assignment of eSPIs to domains. */
 #define nr_static_irqs (ESPI_MAX_INTID + 1)
 #else
 #define nr_static_irqs NR_IRQS
