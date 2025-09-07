@@ -76,12 +76,6 @@ static int __init init_espi_data(void)
     return 0;
 }
 #else
-/*
- * Defined as a prototype as it should not be called if CONFIG_GICV3_ESPI=n.
- * Without CONFIG_GICV3_ESPI, the additional 1024 IRQ descriptors will not
- * be defined, and thus, they cannot be used.
- */
-struct irq_desc *espi_to_desc(unsigned int irq);
 
 static int __init init_espi_data(void)
 {
@@ -96,8 +90,10 @@ struct irq_desc *__irq_to_desc(unsigned int irq)
     if ( irq < NR_LOCAL_IRQS )
         return &this_cpu(local_irq_desc)[irq];
 
+#ifdef CONFIG_GICV3_ESPI
     if ( is_espi(irq) )
         return espi_to_desc(irq);
+#endif
 
     return &irq_desc[irq-NR_LOCAL_IRQS];
 }
