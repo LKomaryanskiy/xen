@@ -44,7 +44,7 @@ struct arch_irq_desc {
 
 extern const unsigned int nr_irqs;
 #ifdef CONFIG_GICV3_ESPI
-/* This will cover the eSPI range, to allow asignmant of eSPIs to domains. */
+/* This will cover the eSPI range, to allow assignment of eSPIs to domains. */
 #define nr_static_irqs (ESPI_MAX_INTID + 1)
 #else
 #define nr_static_irqs NR_IRQS
@@ -73,7 +73,7 @@ static inline bool is_espi(unsigned int irq)
      * The function should not be called for eSPIs when CONFIG_GICV3_ESPI is
      * disabled. Returning false allows the compiler to optimize the code
      * when the config is disabled, while the assert ensures that out-of-range
-     * array resources are not accessed, e.g., in __irq_to_desc().
+     * array resources are not accessed.
      */
     ASSERT(!(irq >= ESPI_BASE_INTID && irq <= ESPI_MAX_INTID));
     return false;
