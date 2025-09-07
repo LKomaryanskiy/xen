@@ -79,10 +79,7 @@ static int __init init_espi_data(void)
 /*
  * Defined as a prototype as it should not be called if CONFIG_GICV3_ESPI=n.
  * Without CONFIG_GICV3_ESPI, the additional 1024 IRQ descriptors will not
- * be defined, and thus, they cannot be used. Unless INTIDs from the eSPI
- * range are mistakenly defined in Xen DTS when the appropriate config is
- * disabled, this function will not be reached because is_espi will return
- * false for non-eSPI INTIDs.
+ * be defined, and thus, they cannot be used.
  */
 struct irq_desc *espi_to_desc(unsigned int irq);
 
