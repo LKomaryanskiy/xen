@@ -464,8 +464,10 @@ static void __iomem *get_addr_by_offset(struct irq_desc *irqd, uint32_t offset)
         case GICD_IPRIORITYR:
             return (GICD_RDIST_SGI_BASE + GICR_IPRIORITYR0 + irqd->irq);
         default:
+            /* Invalid register offset for local IRQs */
             break;
         }
+        break;
     case NR_GIC_LOCAL_IRQS ... SPI_MAX_INTID:
         switch ( offset )
         {
@@ -483,9 +485,12 @@ static void __iomem *get_addr_by_offset(struct irq_desc *irqd, uint32_t offset)
         case GICD_IPRIORITYR:
             return (GICD + GICD_IPRIORITYR + irqd->irq);
         default:
+            /* Invalid register offset for SPIs */
             break;
         }
+        break;
     default:
+        /* Invalid INTID */
         break;
     }
 
@@ -513,12 +518,13 @@ static void gicv3_poke_irq(struct irq_desc *irqd, u32 offset, bool wait_for_rwp)
 
 static bool gicv3_peek_irq(struct irq_desc *irqd, u32 offset)
 {
+    uint32_t mask = 1U << (irqd->irq % 32);
     void __iomem *addr = get_addr_by_offset(irqd, offset);
 
     if ( addr == NULL )
         return false;
 
-    return !!(readl(addr) & (1U << (irqd->irq % 32)));
+    return !!(readl(addr) & mask);
 }
 
 static void gicv3_unmask_irq(struct irq_desc *irqd)
@@ -1315,10 +1321,6 @@ static void gicv3_irq_set_affinity(struct irq_desc *desc, const cpumask_t *mask)
 {
     unsigned int cpu;
     uint64_t affinity;
-    void __iomem *addr = get_addr_by_offset(desc, GICD_IROUTER);
-
-    if ( addr == NULL )
-        return;
 
     ASSERT(!cpumask_empty(mask));
 
@@ -1330,7 +1332,12 @@ static void gicv3_irq_set_affinity(struct irq_desc *desc, const cpumask_t *mask)
     affinity &= ~GICD_IROUTER_SPI_MODE_ANY;
 
     if ( desc->irq >= NR_GIC_LOCAL_IRQS )
-        writeq_relaxed_non_atomic(affinity, addr);
+    {
+        void __iomem *addr = get_addr_by_offset(desc, GICD_IROUTER);
+
+        if ( addr != NULL )
+            writeq_relaxed_non_atomic(affinity, addr);
+    }
 
     spin_unlock(&gicv3.lock);
 }
