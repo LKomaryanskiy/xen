@@ -2125,7 +2125,7 @@ void __init create_dom0(void)
      * Xen vGIC supports a maximum of 992 interrupt lines.
      * 32 are substracted to cover local IRQs.
      */
-    dom0_cfg.arch.nr_spis = min(gic_number_lines(), (unsigned int) 992) - 32;
+    dom0_cfg.arch.nr_spis = vgic_def_nr_spis();
     if ( gic_number_lines() > 992 )
         printk(XENLOG_WARNING "Maximum number of vGIC IRQs exceeded.\n");
     dom0_cfg.arch.tee_type = tee_get_type();
