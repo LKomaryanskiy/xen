@@ -335,6 +335,14 @@ extern void vgic_check_inflight_irqs_pending(struct domain *d, struct vcpu *v,
  */
 #define vgic_num_irqs(d)        ((d)->arch.vgic.nr_spis + 32)
 
+
+extern bool vgic_is_valid_line(struct domain *d, unsigned int virq);
+
+static inline bool vgic_is_spi(struct domain *d, unsigned int virq)
+{
+    return virq >= NR_LOCAL_IRQS && vgic_is_valid_line(d, virq);
+}
+
 /*
  * Allocate a guest VIRQ
  *  - spi == 0 => allocate a PPI. It will be the same on every vCPU
