@@ -335,9 +335,6 @@ void register_vgic_ops(struct domain *d, const struct vgic_ops *ops)
    d->arch.vgic.handler = ops;
 }
 
-extern const int gsx_irq_num;
-extern void remove_gsx_guest(struct domain *d);
-
 void domain_vgic_free(struct domain *d)
 {
     int i;
@@ -349,9 +346,6 @@ void domain_vgic_free(struct domain *d)
         unsigned int virq = idx_to_virq(d, i);
 
         p = spi_to_pending(d, virq);
-
-        if ( p->irq == gsx_irq_num )
-            remove_gsx_guest(d);
 
         if ( p->desc )
         {
