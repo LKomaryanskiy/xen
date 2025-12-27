@@ -356,6 +356,7 @@ extern void vgic_check_inflight_irqs_pending(struct domain *d, struct vcpu *v,
  * in which LPIs don't participate.
  */
 #define vgic_num_irqs(d)        ((d)->arch.vgic.nr_spis + 32)
+#define VGIC_DEF_NR_SPIS (min(gic_number_lines(), 992U) - 32)
 
 
 static inline unsigned int vgic_def_nr_spis(void)
