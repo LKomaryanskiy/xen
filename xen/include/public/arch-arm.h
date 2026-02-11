@@ -495,7 +495,7 @@ typedef uint64_t xen_callback_t;
 #define NR_MAGIC_PAGES 4
 
 /* 64 MB is reserved for virtio-pci Prefetch memory */
-#define GUEST_VIRTIO_PCI_ADDR_TYPE_PREFETCH_MEM    xen_mk_ullong(0x42000000)
+#define GUEST_VIRTIO_PCI_ADDR_TYPE_PREFETCH_MEM    xen_mk_ullong(0x3c000000)
 #define GUEST_VIRTIO_PCI_PREFETCH_MEM_ADDR         xen_mk_ullong(0x3a000000)
 #define GUEST_VIRTIO_PCI_PREFETCH_MEM_SIZE         xen_mk_ullong(0x04000000)
 
