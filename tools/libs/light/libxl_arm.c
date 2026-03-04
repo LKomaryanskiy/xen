@@ -25,6 +25,24 @@
 #define VIRTIO_PCI_HOST_NUM_SPIS            4
 #define VIRTIO_PCI_MAX_HOSTS                8
 
+/*
+ * 16 MB is reserved for virtio-pci configuration space based on calculation
+ * 8 bridges * 2 buses x 32 devices x 8 functions x 4 KB = 16 MB
+ */
+#define GUEST_VIRTIO_PCI_ECAM_BASE          xen_mk_ullong(0x33000000)
+#define GUEST_VIRTIO_PCI_TOTAL_ECAM_SIZE    xen_mk_ullong(0x01000000)
+#define GUEST_VIRTIO_PCI_HOST_ECAM_SIZE     xen_mk_ullong(0x00200000)
+
+/* 64 MB is reserved for virtio-pci memory */
+#define GUEST_VIRTIO_PCI_ADDR_TYPE_MEM    xen_mk_ullong(0x02000000)
+#define GUEST_VIRTIO_PCI_MEM_ADDR         xen_mk_ullong(0x34000000)
+#define GUEST_VIRTIO_PCI_MEM_SIZE         xen_mk_ullong(0x04000000)
+
+/* 64 MB is reserved for virtio-pci Prefetch memory */
+#define GUEST_VIRTIO_PCI_ADDR_TYPE_PREFETCH_MEM    xen_mk_ullong(0x42000000)
+#define GUEST_VIRTIO_PCI_PREFETCH_MEM_ADDR         xen_mk_ullong(0x3a000000)
+#define GUEST_VIRTIO_PCI_PREFETCH_MEM_SIZE         xen_mk_ullong(0x04000000)
+
 static uint64_t alloc_virtio_mmio_base(libxl__gc *gc, uint64_t *virtio_mmio_base)
 {
     uint64_t base = *virtio_mmio_base;
