@@ -43,6 +43,9 @@
 #define GUEST_VIRTIO_PCI_PREFETCH_MEM_ADDR         xen_mk_ullong(0x3a000000)
 #define GUEST_VIRTIO_PCI_PREFETCH_MEM_SIZE         xen_mk_ullong(0x04000000)
 
+#define GUEST_VIRTIO_PCI_SPI_FIRST   44
+#define GUEST_VIRTIO_PCI_SPI_LAST    76
+
 static uint64_t alloc_virtio_mmio_base(libxl__gc *gc, uint64_t *virtio_mmio_base)
 {
     uint64_t base = *virtio_mmio_base;
