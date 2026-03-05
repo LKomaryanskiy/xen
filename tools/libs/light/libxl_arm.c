@@ -1096,6 +1096,8 @@ static int make_vpci_node(libxl__gc *gc, void *fdt,
     return 0;
 }
 
+#define PCI_IOMMU_MAP_STRIDE 4
+
 /* XXX Consider reusing libxl__realloc() to avoid an extra loop */
 static int create_virtio_pci_iommu_map(libxl__gc *gc, void *fdt,
                                        libxl_virtio_pci_host *host,
