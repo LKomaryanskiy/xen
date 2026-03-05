@@ -598,8 +598,6 @@ libxl_virtio_pci_host = Struct("virtio_pci_host", [
     ("mem_size",          uint64),
     ("prefetch_mem_base", uint64),
     ("prefetch_mem_size", uint64),
-    ("irq_first",         uint32),
-    ("num_irqs",          uint32),
     ])
 
 libxl_domain_build_info = Struct("domain_build_info",[

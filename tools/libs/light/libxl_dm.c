@@ -3446,14 +3446,6 @@ int libxl__save_dm_virtio_pci_host(libxl__gc *gc,
                                      GCSPRINTF("%#"PRIx64, host->prefetch_mem_size));
         if (rc) goto out;
 
-        rc = libxl__xs_write_checked(gc, t, GCSPRINTF("%s/irq_first", dm_path),
-                                     GCSPRINTF("%u", host->irq_first));
-        if (rc) goto out;
-
-        rc = libxl__xs_write_checked(gc, t, GCSPRINTF("%s/num_irqs", dm_path),
-                                     GCSPRINTF("%u", host->num_irqs));
-        if (rc) goto out;
-
         rc = libxl__xs_transaction_commit(gc, &t);
         if (!rc) break;
         if (rc < 0) goto out;
